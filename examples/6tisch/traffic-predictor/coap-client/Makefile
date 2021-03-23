@@ -1,0 +1,19 @@
+CONTIKI_PROJECT = traffic-predictor
+all: $(CONTIKI_PROJECT)
+
+# Do not try to build on Sky because of code size limitation
+PLATFORMS_EXCLUDE = sky z1
+
+# Configure with TSCH
+MAKE_MAC = MAKE_MAC_TSCH
+
+# Configure with RPL classic
+MAKE_ROUTING = MAKE_ROUTING_RPL_CLASSIC
+
+CONTIKI=../../../..
+
+# Include the CoAP implementation
+include $(CONTIKI)/Makefile.dir-variables
+MODULES += $(CONTIKI_NG_APP_LAYER_DIR)/coap
+
+include $(CONTIKI)/Makefile.include
