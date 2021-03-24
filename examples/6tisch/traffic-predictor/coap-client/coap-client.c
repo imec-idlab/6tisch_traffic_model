@@ -119,8 +119,8 @@ PROCESS_THREAD(coap_client, ev, data)
       printf("--Toggle timer--\n");
       if(NETSTACK_ROUTING.node_is_reachable()) {
         /* prepare request, TID is set by COAP_BLOCKING_REQUEST() */
-        coap_init_message(request, COAP_TYPE_CON, COAP_POST, 0);
-        coap_set_header_uri_path(request, service_urls[1]);
+        coap_init_message(request, COAP_TYPE_CON, COAP_GET, 0);
+        coap_set_header_uri_path(request, service_urls[4]);
 
         const char msg[] = "Toggle!";
 
