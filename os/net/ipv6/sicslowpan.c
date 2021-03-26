@@ -1699,6 +1699,12 @@ output(const linkaddr_t *localdest)
             mac_max_payload, frag_needed);
 
   if(frag_needed) {
+
+#if TSCH_WITH_INT
+    packetbuf_set_attr(PACKETBUF_ATTR_INT, 0);
+	  packetbuf_ie_clear();
+#endif /* TSCH_WITH_INT */    
+
 #if SICSLOWPAN_CONF_FRAG
     /* Number of bytes processed. */
     uint16_t processed_ip_out_len;
@@ -1818,6 +1824,23 @@ output(const linkaddr_t *localdest)
      * The packet does not need to be fragmented
      * copy "payload" and send
      */
+
+#if TSCH_WITH_INT
+    if(!linkaddr_cmp(&dest, &linkaddr_null))  {
+      packetbuf_set_attr(PACKETBUF_ATTR_INT, uipbuf_get_attr(UIPBUF_ATTR_INT));
+		  packetbuf_set_attr(PACKETBUF_ATTR_RSSI, uipbuf_get_attr(UIPBUF_ATTR_RSSI));
+		  packetbuf_set_attr(PACKETBUF_ATTR_CHANNEL, uipbuf_get_attr(UIPBUF_ATTR_CHANNEL));
+		  packetbuf_set_attr(PACKETBUF_ATTR_TIMESTAMP, uipbuf_get_attr(UIPBUF_ATTR_TIMESTAMP));
+        
+      if(uipbuf_ielen()>0){
+    	  uipbuf_ie_copyto(packetbuf_ie_ptr());
+		    packetbuf_set_ielen(uipbuf_ielen());
+      }
+    } else{
+      packetbuf_set_attr(PACKETBUF_ATTR_INT, 0);
+	    packetbuf_ie_clear();
+    }
+#endif /* TSCH_WITH_INT */    
 
    if(uip_len < uncomp_hdr_len) {
      LOG_ERR("output: uip_len is smaller than uncomp_hdr_len (%d < %d)",
@@ -2105,6 +2128,14 @@ input(void)
       packetbuf_attr(PACKETBUF_ATTR_KEY_INDEX));
 #endif /* LLSEC802154_USES_EXPLICIT_KEYS */
 #endif /*  LLSEC802154_USES_AUX_HEADER */
+
+#if TSCH_WITH_INT
+    uipbuf_set_attr(UIPBUF_ATTR_INT, packetbuf_attr(PACKETBUF_ATTR_INT));
+        
+    if(packetbuf_ielen()>0){
+    	uipbuf_ie_copyfrom(packetbuf_ie_ptr(), packetbuf_ielen());
+    }
+#endif /* TSCH_WITH_INT */
 
     tcpip_input();
 #if SICSLOWPAN_CONF_FRAG
