@@ -37,6 +37,16 @@
 struct uip_ip_hdr;
 
 /**
+ * \brief      The size of the telemetry ies for packetbuf, in bytes
+ */
+
+#ifdef UIPBUF_IE_CONF_SIZE
+#define UIPBUF_IE_SIZE UIPBUF_IE_CONF_SIZE
+#else
+#define UIPBUF_IE_SIZE 128
+#endif
+
+/**
  * \brief          Resets uIP buffer
  */
 void uipbuf_clear(void);
@@ -177,6 +187,11 @@ void uipbuf_clear_attr(void);
  *                 attributes including all flags.
  */
 void uipbuf_init(void);
+void uipbuf_ie_clear(void);
+int uipbuf_ie_copyfrom(const void *from, uint8_t len);
+int uipbuf_ie_copyto(void *to);
+uint8_t uipbuf_ielen(void);
+void uipbuf_set_ielen(uint8_t len);
 
 /**
  * \brief The bits defined for uipbuf attributes flag.
@@ -201,6 +216,10 @@ enum {
   UIPBUF_ATTR_PHYSICAL_NETWORK_ID, /**< Physical network ID (mapped to PAN ID)*/
   UIPBUF_ATTR_MAX_MAC_TRANSMISSIONS, /**< MAX transmissions of the packet MAC */
   UIPBUF_ATTR_FLAGS,   /**< Flags that can control lower layers.  see above. */
+  UIPBUF_ATTR_INT,   /**< Telemetry Attributes. */
+  UIPBUF_ATTR_TIMESTAMP,   /**< Telemetry Attributes. */
+  UIPBUF_ATTR_RSSI,   /**< Telemetry Attributes. */
+  UIPBUF_ATTR_CHANNEL,   /**< Telemetry Attributes. */  
   UIPBUF_ATTR_MAX
 };
 

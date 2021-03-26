@@ -59,16 +59,16 @@ const sixtop_sf_t *scheduling_functions[SIXTOP_MAX_SCHEDULING_FUNCTIONS];
 
 const sixtop_sf_t *sixtop_find_sf(uint8_t sfid);
 
-/*---------------------------------------------------------------------------*/
-void
-strip_payload_termination_ie(void)
-{
-  uint8_t *ptr = packetbuf_dataptr();
-  if(ptr[0] == 0x00 && ptr[1] == 0xf8) {
-    /* Payload Termination IE is 2 octets long */
-    packetbuf_hdrreduce(2);
-  }
-}
+// /*---------------------------------------------------------------------------*/
+// void
+// strip_payload_termination_ie(void)
+// {
+//   uint8_t *ptr = packetbuf_dataptr();
+//   if(ptr[0] == 0x00 && ptr[1] == 0xf8) {
+//     /* Payload Termination IE is 2 octets long */
+//     packetbuf_hdrreduce(2);
+//   }
+// }
 /*---------------------------------------------------------------------------*/
 int
 sixtop_add_sf(const sixtop_sf_t *sf)
@@ -153,7 +153,7 @@ sixtop_output(const linkaddr_t *dest_addr, mac_callback_t callback, void *arg)
   ies.sixtop_ie_content_len = packetbuf_totlen();
   if(packetbuf_hdralloc(2) != 1 ||
      (len = frame80215e_create_ie_ietf(packetbuf_hdrptr(),
-                                       2,
+                                       ies.sixtop_ie_content_len,
                                        &ies)) < 0) {
     LOG_ERR("6top: sixtop_output() fails because of Payload IE Header\n");
     if(callback != NULL) {
@@ -201,59 +201,62 @@ sixtop_output(const linkaddr_t *dest_addr, mac_callback_t callback, void *arg)
 }
 /*---------------------------------------------------------------------------*/
 void
-sixtop_input(void)
+sixtop_input(struct ieee802154_ies *ies)
 {
-  uint8_t *hdr_ptr, *payload_ptr;
-  uint16_t hdr_len, payload_len;
+  // uint8_t *hdr_ptr, *payload_ptr;
+  // uint16_t hdr_len, payload_len;
 
-  frame802154_t frame;
-  struct ieee802154_ies ies;
+  // frame802154_t frame;
+  // struct ieee802154_ies ies;
   linkaddr_t src_addr;
 
-  /*
-   * A received *DATA* frame is supposed to be stored in packetbuf by
-   * framer_802154.parse(). packetbuf_dataptr() points at the starting address
-   * of the IE field or Frame Payload field if it's available. FCS should not be
-   * in packetbuf, which is expected to be stripped at a radio.
-   */
+  // /*
+  //  * A received *DATA* frame is supposed to be stored in packetbuf by
+  //  * framer_802154.parse(). packetbuf_dataptr() points at the starting address
+  //  * of the IE field or Frame Payload field if it's available. FCS should not be
+  //  * in packetbuf, which is expected to be stripped at a radio.
+  //  */
 
-  payload_ptr = packetbuf_dataptr();
-  payload_len = packetbuf_datalen();
-  hdr_len = packetbuf_hdrlen();
-  hdr_ptr = payload_ptr - hdr_len;
+  // payload_ptr = packetbuf_dataptr();
+  // payload_len = packetbuf_datalen();
+  // hdr_len = packetbuf_hdrlen();
+  // hdr_ptr = payload_ptr - hdr_len;
 
   memcpy(&src_addr, packetbuf_addr(PACKETBUF_ADDR_SENDER), sizeof(src_addr));
 
-  if(frame802154_parse(hdr_ptr, hdr_len, &frame) == 0) {
-    /* parse error; should not occur, anyway */
-    LOG_ERR("6top: frame802154_parse error\n");
-    return;
-  }
+  // if(frame802154_parse(hdr_ptr, hdr_len, &frame) == 0) {
+  //   /* parse error; should not occur, anyway */
+  //   LOG_ERR("6top: frame802154_parse error\n");
+  //   return;
+  // }
 
-  /*
-   * We don't need to check the frame version nor frame type. The frame version
-   * is turned out to be 0b10 automatically if the frame has a IE list. The
-   * frame type is supposed to be DATA as mentioned above.
-   */
-  assert(frame.fcf.frame_version == FRAME802154_IEEE802154_2015);
-  assert(frame.fcf.frame_type == FRAME802154_DATAFRAME);
-  memset(&ies, 0, sizeof(ies));
-  if(frame.fcf.ie_list_present &&
-     frame802154e_parse_information_elements(payload_ptr,
-                                             payload_len, &ies) >= 0 &&
-     ies.sixtop_ie_content_ptr != NULL &&
-     ies.sixtop_ie_content_len > 0) {
+  // /*
+  //  * We don't need to check the frame version nor frame type. The frame version
+  //  * is turned out to be 0b10 automatically if the frame has a IE list. The
+  //  * frame type is supposed to be DATA as mentioned above.
+  //  */
+  // assert(frame.fcf.frame_version == FRAME802154_IEEE802154_2015);
+  // assert(frame.fcf.frame_type == FRAME802154_DATAFRAME);
+  // memset(&ies, 0, sizeof(ies));
+  // if(frame.fcf.ie_list_present &&
+  //    frame802154e_parse_information_elements(payload_ptr,
+  //                                            payload_len, &ies) >= 0 &&
+  //    ies.sixtop_ie_content_ptr != NULL &&
+  //    ies.sixtop_ie_content_len > 0) {
 
-    sixp_input(ies.sixtop_ie_content_ptr, ies.sixtop_ie_content_len,
-               &src_addr);
+  //   sixp_input(ies.sixtop_ie_content_ptr, ies.sixtop_ie_content_len,
+  //              &src_addr);
 
-    /*
-     * move payloadbuf_dataptr() to the beginning of the next layer for further
-     * processing
-     */
-    packetbuf_hdrreduce(ies.sixtop_ie_content_ptr - payload_ptr +
-                        ies.sixtop_ie_content_len);
-    strip_payload_termination_ie();
+  //   /*
+  //    * move payloadbuf_dataptr() to the beginning of the next layer for further
+  //    * processing
+  //    */
+  //   packetbuf_hdrreduce(ies.sixtop_ie_content_ptr - payload_ptr +
+  //                       ies.sixtop_ie_content_len);
+  //   strip_payload_termination_ie();
+  if(ies->sixtop_ie_content_ptr != NULL && ies->sixtop_ie_content_len > 0) {
+     sixp_input(ies->sixtop_ie_content_ptr, ies->sixtop_ie_content_len, &src_addr);
+
   }
 }
 /*---------------------------------------------------------------------------*/

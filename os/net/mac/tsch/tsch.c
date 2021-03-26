@@ -57,9 +57,12 @@
 #include "net/mac/mac-sequence.h"
 #include "lib/random.h"
 #include "net/routing/routing.h"
+#include <math.h>
+#include "net/routing/rpl-classic/rpl-private.h"
 
 #if TSCH_WITH_SIXTOP
 #include "net/mac/tsch/sixtop/sixtop.h"
+#include "net/mac/framer/frame802154e-ie.h"
 #endif
 
 #if FRAME802154_VERSION < FRAME802154_IEEE802154_2015
@@ -152,6 +155,13 @@ unsigned long sync_count;
 int32_t min_drift_seen;
 int32_t max_drift_seen;
 
+/*A-K INT telemetry packet sequence no*/
+uint8_t int_sequence_no;
+#define INT_BITMAP 0xf0 // 0xe0 (0,1,2) or 0x20 for queue
+#define INT_MODEFLAG 0xa8
+int32_t last_int_asn;
+uint16_t current_int_period=100; //slots
+
 /* TSCH processes and protothreads */
 PT_THREAD(tsch_scan(struct pt *pt));
 PROCESS(tsch_process, "main process");
@@ -160,6 +170,17 @@ PROCESS(tsch_pending_events_process, "pending events process");
 
 /* Other function prototypes */
 static void packet_input(void);
+
+/*---------------------------------------------------------------------------*/
+void
+strip_payload_termination_ie(void)
+{
+  uint8_t *ptr = packetbuf_dataptr();
+  if(ptr[0] == 0x00 && ptr[1] == 0xf8) {
+    /* Payload Termination IE is 2 octets long */
+    packetbuf_hdrreduce(2);
+  }
+}
 
 /* Getters and setters */
 
@@ -505,6 +526,7 @@ tsch_rx_process_pending()
       packetbuf_copyfrom(current_input->payload, current_input->len);
       packetbuf_set_attr(PACKETBUF_ATTR_RSSI, current_input->rssi);
       packetbuf_set_attr(PACKETBUF_ATTR_CHANNEL, current_input->channel);
+      packetbuf_set_attr(PACKETBUF_ATTR_TIMESTAMP, (uint16_t) (current_input->rx_asn.ls4b & 0xffff));
     }
 
     if(is_data) {
@@ -1119,10 +1141,293 @@ send_packet(mac_callback_t sent, void *ptr)
     max_transmissions = TSCH_MAC_MAX_FRAME_RETRIES + 1;
   }
 
+#if TSCH_WITH_INT
+  struct ieee802154_ies ies;
+  memset(&ies, 0, sizeof(ies));
+  
+
+  if(packetbuf_attr(PACKETBUF_ATTR_INT)==1) {
+      hdr_len=NETSTACK_FRAMER.length();
+	  /* specify with PACKETBUF_ATTR_METADATA that packetbuf has IEs */
+	  packetbuf_set_attr(PACKETBUF_ATTR_MAC_METADATA, 1);	  
+	  
+	  // Forwarding Packet		
+	  if(packetbuf_ielen()>0){
+      memcpy(ies.int_ie_content,packetbuf_ie_ptr(),packetbuf_ielen());
+      ies.int_ie_content_len = packetbuf_ielen();
+      frame80215e_retrieve_ie_int_header(&ies);
+      //is hop-by-hop??
+      uint8_t is_hop_by_hop=(ies.int_ie_mode_flags & 0x80) >>7; 
+      //uint8_t hbh_mode=(ies.int_ie_mode_flags & 0x60) >>5;
+      //uint8_t bitmap_mode=(ies.int_ie_mode_flags & 0x18) >>3;
+    	uint8_t is_overflow=(ies.int_ie_mode_flags & 0x02) >>1;
+    	//uint8_t is_loopback=(ies.int_ie_mode_flags & 0x01);
+    		  		
+    	uint8_t transit_delay=tsch_current_asn.ls4b-packetbuf_attr(PACKETBUF_ATTR_TIMESTAMP);
+    	uint8_t rssi_char;
+    	if((((packetbuf_attr(PACKETBUF_ATTR_RSSI))&0x8000)>>8)>0){
+		    	rssi_char= (((packetbuf_attr(PACKETBUF_ATTR_RSSI))&0x8000)>>8)+(0x0080-((packetbuf_attr(PACKETBUF_ATTR_RSSI)) & 0x007F));
+		}
+		else{
+			    rssi_char= (((packetbuf_attr(PACKETBUF_ATTR_RSSI))&0x8000)>>8)+((packetbuf_attr(PACKETBUF_ATTR_RSSI)) & 0x007F);
+		}
+
+    	LOG_INFO("A-K: Forwarding Data Packet with INT rssi: %d char_rssi: %u transit delay: %u\n", (signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI),rssi_char, transit_delay);
+
+		if(is_hop_by_hop && !is_overflow){ 
+			
+
+			uint8_t existing_frame=packetbuf_datalen()+hdr_len + ies.int_ie_content_len+(2+2+1+2+2+1);
+#if ROUTING_CONF_RPL_LITE
+			uint8_t root_distance = ((curr_instance.dag.rank - ROOT_RANK)/RPL_MIN_HOPRANKINC);
+#elif ROUTING_CONF_RPL_CLASSIC
+      uint8_t root_distance = ((default_instance->current_dag->rank - ROOT_RANK(default_instance))/RPL_MIN_HOPRANKINC);
+#endif
+		
+			//temporarily added in order to prevent the effect of 6lowpan compression in the packet size
+			if(root_distance==1)
+			{
+				existing_frame=existing_frame+9; 
+			}
+		
+			uint8_t remaining_space=0;
+			if(PACKETBUF_SIZE>existing_frame){
+				remaining_space=PACKETBUF_SIZE-existing_frame;
+			}			
+			uint8_t required_int_len = 2 + 2 + 1 + 1; 
+						
+			if(remaining_space>required_int_len){
+				
+				uint8_t int_entry_decision=true;
+				
+				
+#if INT_STRATEGY_PROBABILISTIC
+			uint16_t remaining_int_entry=floor(remaining_space/required_int_len);	
+			uint8_t random_num = (random_rand()*random_rand())%100;
+			if(random_num>=(100*remaining_int_entry)/root_distance){
+				int_entry_decision=false;
+				LOG_WARN("A-K: Skip INT with remaining space %u with distance: %u\n",remaining_int_entry, root_distance);
+			} 
+			else{	
+				LOG_WARN("A-K: Add INT with remaining space %u with distance: %u\n",remaining_int_entry, root_distance);
+			}		
+#endif
+				if(int_entry_decision){
+					LOG_WARN("A-K: Adding INT\n");
+					uint8_t int_len=0;
+					if(((ies.int_ie_bitmap & 0x80)>>7)==1){
+						ies.int_ie_content[packetbuf_ielen()+int_len]=linkaddr_node_addr.u8[LINKADDR_SIZE-2];
+						ies.int_ie_content[packetbuf_ielen()+int_len+1]=linkaddr_node_addr.u8[LINKADDR_SIZE-1];
+						int_len=int_len+2;
+					}
+					if(((ies.int_ie_bitmap & 0x40)>>6)==1){
+						// 4bits channel + 12 bits timestamp (last 12 bits of ASN)
+						ies.int_ie_content[packetbuf_ielen()+int_len]=((packetbuf_attr(PACKETBUF_ATTR_TIMESTAMP) & 0x00000F00)>>8) + (((packetbuf_attr(PACKETBUF_ATTR_CHANNEL) - 11) & 0x0F)<<4);
+						ies.int_ie_content[packetbuf_ielen()+int_len+1]=packetbuf_attr(PACKETBUF_ATTR_TIMESTAMP);
+						int_len=int_len+2;
+					}
+
+					if(((ies.int_ie_bitmap & 0x20)>>5)==1){
+            struct tsch_neighbor *n = NULL;
+            uint8_t queue_size = -1;
+            if(!tsch_is_locked()){
+              n = tsch_queue_add_nbr(addr);
+              queue_size = (uint8_t) tsch_queue_nbr_packet_count(n);
+            }
+            /**/
+						if(queue_size > 15 || transit_delay > 15){
+							LOG_WARN("A-K: Large transit delay (%u) or queue length (%u)\n", transit_delay, queue_size);
+						}
+						ies.int_ie_content[packetbuf_ielen()+int_len]=(queue_size & 0x0F)+((transit_delay & 0x0F)<<4);
+						int_len++;
+					}
+					
+					//RSSI
+					if(((ies.int_ie_bitmap & 0x10)>>4)==1){
+						ies.int_ie_content[packetbuf_ielen()+int_len]=packetbuf_attr(PACKETBUF_ATTR_RSSI);
+						int_len++;
+					}
+
+					if((ies.int_ie_bitmap & 0x0F)!=0){
+						LOG_WARN("A-K: Cannot add INT due to unsupported INT bitmap %u \n",ies.int_ie_bitmap);
+					}
+
+					// to check if INT will lead to overflow!
+					if(existing_frame+int_len<PACKETBUF_SIZE){
+						ies.int_ie_content_len = int_len + ies.int_ie_content_len;
+					}
+				}
+			}
+			else{
+				 if(packetbuf_datalen()+hdr_len+3+2+2+1+2+2>=PACKETBUF_SIZE){
+						LOG_WARN("A-K: REMOVE INT due to overflow for inline INT\n");
+						/* remove all INT*/
+						packetbuf_set_attr(PACKETBUF_ATTR_MAC_METADATA, 0);
+						ies.int_ie_content_len=0;
+					}
+					else if(packetbuf_datalen()+hdr_len+ies.int_ie_content_len+2+2+1+2+2>=PACKETBUF_SIZE){
+						LOG_WARN("A-K: REMOVE INT due to overflow for inline INT content\n");
+						/* remove INT content but keep header*/
+						ies.int_ie_content_len=3;
+					}
+					else{
+						// overflow occurred!!
+						ies.int_ie_mode_flags=ies.int_ie_mode_flags | 0x02;
+						ies.int_ie_content[0]=ies.int_ie_mode_flags;
+						LOG_WARN("A-K: INT overflow \n");
+					}
+			}
+		}
+		else{	
+			LOG_WARN("A-K: Cannot add INT due to end-to-end telemetry option  or overflow\n");
+		}
+	  }
+	  else{	
+		  		
+		uint8_t int_decision=false;
+		uint8_t int_entry_decision=true;
+		
+#if INT_STRATEGY_PERIODICAL
+		if((int32_t)tsch_current_asn.ls4b-last_int_asn > current_int_period){
+				
+				last_int_asn = (int32_t)tsch_current_asn.ls4b;
+				int_decision=true;
+				LOG_WARN("A-K: Initiating INT with seqno %u \n",int_sequence_no);
+		}
+#endif
+
+#if INT_STRATEGY_CONTINUOUS
+		int_decision=true;
+		LOG_WARN("A-K: Initiating INT with seqno %u \n",int_sequence_no);
+#endif
+
+#if INT_STRATEGY_PROBABILISTIC
+		int_decision=true;
+		uint8_t needed_space=packetbuf_datalen()+hdr_len+(2+2+1+2+2+1)+3;		
+		
+		//temporarily added in order to prevent the effect of 6lowpan compression in the packet size
+		//needed_space=needed_space+9;
+		
+		uint8_t remaining_space=0;
+		if(PACKETBUF_SIZE>needed_space){
+			remaining_space=PACKETBUF_SIZE-needed_space;
+		}
+		uint8_t required_int_len = 2 +2+ 1+1; 
+		uint16_t remaining_int_entry=floor(remaining_space/required_int_len);		
+#if ROUTING_CONF_RPL_LITE
+		uint8_t root_distance = ((curr_instance.dag.rank - ROOT_RANK)/RPL_MIN_HOPRANKINC);
+#elif ROUTING_CONF_RPL_CLASSIC
+    uint8_t root_distance = ((default_instance->current_dag->rank - ROOT_RANK(default_instance))/RPL_MIN_HOPRANKINC);
+#endif
+		uint8_t random_num = (random_rand()*random_rand())%100;
+		if(random_num>=(100*remaining_int_entry)/root_distance){
+			int_entry_decision=false;
+			LOG_WARN("A-K: Skip INT with seqno %u with remaining space %u with distance %u\n",int_sequence_no, remaining_int_entry, root_distance);
+		} 
+		else{
+			LOG_WARN("A-K: Init INT with seqno %u with remaining space %u with distance %u\n",int_sequence_no, remaining_int_entry, root_distance);
+		}				
+
+#endif
+		
+		if(int_decision){
+				ies.int_ie_mode_flags=INT_MODEFLAG; 
+				ies.int_ie_seq_no=int_sequence_no;
+				ies.int_ie_bitmap=INT_BITMAP;
+
+				uint8_t int_len=0;
+				ies.int_ie_content[0]=ies.int_ie_mode_flags;
+				ies.int_ie_content[1]=ies.int_ie_seq_no;
+				ies.int_ie_content[2]=ies.int_ie_bitmap;
+				int_len=3;
+			if(int_entry_decision){
+				if(((ies.int_ie_bitmap & 0x80)>>7)==1){
+					ies.int_ie_content[int_len]=linkaddr_node_addr.u8[LINKADDR_SIZE-2];
+					ies.int_ie_content[int_len+1]=linkaddr_node_addr.u8[LINKADDR_SIZE-1];
+					int_len=int_len+2;
+				}
+				if(((ies.int_ie_bitmap & 0x40)>>6)==1){	
+					// 4bits channel + 12 bits timestamp (last 12 bits of ASN)
+					ies.int_ie_content[packetbuf_ielen()+int_len]= (tsch_current_asn.ls4b & 0x00000F00)>>8;
+					ies.int_ie_content[packetbuf_ielen()+int_len+1]=tsch_current_asn.ls4b;
+					int_len=int_len+2;
+				}
+				if(((ies.int_ie_bitmap & 0x20)>>5)==1){
+          struct tsch_neighbor *n = NULL;
+          uint8_t queue_size = -1;
+          if(!tsch_is_locked()){
+            n = tsch_queue_add_nbr(addr);
+            queue_size = (uint8_t) tsch_queue_nbr_packet_count(n);
+          }
+          /**/
+					ies.int_ie_content[packetbuf_ielen()+int_len]=(queue_size & 0x0F);
+					int_len++;
+				}
+
+				//RSSI
+				if(((ies.int_ie_bitmap & 0x10)>>4)==1){
+					ies.int_ie_content[packetbuf_ielen()+int_len]=0;
+					int_len++;
+				}
+
+				if((ies.int_ie_bitmap & 0x0F)!=0){
+						LOG_WARN("A-K: Cannot add INT due to unsupported INT bitmap %u \n",ies.int_ie_bitmap);
+				}
+			}
+				// to check if INT will fit in
+				if(packetbuf_datalen()+hdr_len+int_len+2+2+1+2+2+1<PACKETBUF_SIZE){
+					ies.int_ie_content_len = int_len;
+					int_sequence_no=int_sequence_no+1;
+				}
+				else{
+					/* specify with PACKETBUF_ATTR_METADATA that packetbuf does not have IEs */
+					packetbuf_set_attr(PACKETBUF_ATTR_MAC_METADATA, 0);
+					LOG_WARN("A-K: NOT ADDING IE: %u %u\n",ies.int_ie_content_len,packetbuf_datalen()+int_len+2+2+1+2+2+1);
+				}
+			}
+			else{
+					/* specify with PACKETBUF_ATTR_METADATA that packetbuf does not have IEs */
+					packetbuf_set_attr(PACKETBUF_ATTR_MAC_METADATA, 0);
+					LOG_WARN("A-K: Not Adding IE due to INT Strategy");
+			}
+		}
+   }
+
+#endif /* TSCH_WITH_INT */
+
   if((hdr_len = NETSTACK_FRAMER.create()) < 0) {
     LOG_ERR("! can't send packet due to framer error\n");
     ret = MAC_TX_ERR;
   } else {
+#if TSCH_WITH_INT
+	  if(ies.int_ie_content_len>0){
+		  /* prepend Termination 1 IE to the header field; 2 octets */
+		  if(packetbuf_hdrallocfromend(2) &&
+		     frame80215e_create_ie_header_list_termination_1((uint8_t *)packetbuf_dataptr()-2, 2, &ies) < 0) {
+		    LOG_ERR("A-K: send_packet() fails because of Header Termination 1 IE\n");
+		    ret = MAC_TX_ERR;
+		    mac_call_sent_callback(sent, ptr, ret, 1);
+		    return;
+		  }
+
+		  if(packetbuf_hdrallocfromend(2) != 1 
+			|| frame80215e_create_ie_ietf((uint8_t *)packetbuf_dataptr()-2, ies.int_ie_content_len+1, &ies) < 0){
+		    LOG_ERR("A-K: send_packet() fails because of IETF IE Header\n");
+		    ret = MAC_TX_ERR;
+		    mac_call_sent_callback(sent, ptr, ret, 1);
+		    return;
+		  }
+
+	  	  if(packetbuf_hdrallocfromend(1+ies.int_ie_content_len+2) != 1 
+			|| frame80215e_create_ie_int_content((uint8_t *)packetbuf_dataptr()-(ies.int_ie_content_len+2+1), ies.int_ie_content_len, &ies) < 0
+			|| frame80215e_create_ie_payload_list_termination((uint8_t *)packetbuf_dataptr()-2, 2, &ies) < 0){
+		    LOG_ERR("A-K: send_packet() fails because of INT IE Header and Content\n");
+		    ret = MAC_TX_ERR;
+		    mac_call_sent_callback(sent, ptr, ret, 1);
+		    return;
+		   }
+	  }
+#endif /* TSCH_WITH_INT */
     struct tsch_packet *p;
     struct tsch_neighbor *n;
     /* Enqueue packet */
@@ -1181,9 +1486,73 @@ packet_input(void)
       LOG_INFO("received from ");
       LOG_INFO_LLADDR(packetbuf_addr(PACKETBUF_ADDR_SENDER));
       LOG_INFO_(" with seqno %u\n", packetbuf_attr(PACKETBUF_ATTR_MAC_SEQNO));
+#if TSCH_WITH_INT || TSCH_WITH_SIXTOP
+  uint8_t *hdr_ptr, *payload_ptr;
+  uint16_t hdr_len, payload_len;
+  frame802154_t frame;
+  struct ieee802154_ies ies;
+  memset(&ies, 0, sizeof(ies));
+
+  payload_ptr = packetbuf_dataptr();
+  payload_len = packetbuf_datalen();
+  hdr_len = packetbuf_hdrlen();
+  hdr_ptr = payload_ptr - hdr_len;
+
+  if(frame802154_parse(hdr_ptr, hdr_len, &frame) == 0) {
+    /* parse error; should not occur, anyway */
+    LOG_ERR("6top: frame802154_parse error\n");
+    return;
+  }
+
+  if(frame.fcf.ie_list_present){
+     int ie_length = frame802154e_parse_information_elements(payload_ptr,
+                                             payload_len, &ies);
+     if(ie_length >= 0){
+
 #if TSCH_WITH_SIXTOP
-      sixtop_input();
+      if(ies.sixtop_ie_content_ptr != NULL && ies.sixtop_ie_content_len > 0) {
+      		sixtop_input(&ies);
+     	}
 #endif /* TSCH_WITH_SIXTOP */
+#if TSCH_WITH_INT
+    LOG_INFO("A-K: checking int length [%u]\n",ies.int_ie_content_len);
+	if(ies.int_ie_content_len > 0) {
+			packetbuf_ie_clear();
+	        packetbuf_set_attr(PACKETBUF_ATTR_INT, 1);
+			packetbuf_ie_copyfrom(ies.int_ie_content, ies.int_ie_content_len);
+			
+			if(NETSTACK_ROUTING.node_is_root()==1){
+				frame80215e_retrieve_ie_int_header(&ies);
+				LOG_WARN("A-K: RECEIVED INT from node [%u] seqno: %u len: %u \n", ies.int_ie_content[4], ies.int_ie_seq_no, ies.int_ie_content_len);
+				LOG_WARN("A-K: INT DATA: len: %u ASN: %u %lu ch: %u rssi: %d data: ", ies.int_ie_content_len,tsch_current_asn.ms1b,tsch_current_asn.ls4b,packetbuf_attr(PACKETBUF_ATTR_CHANNEL),(signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI));
+				/**/
+        for(int i = 0; i < ies.int_ie_content_len; i++) {
+						LOG_WARN_("%02x", ies.int_ie_content[i]);
+				}
+				LOG_WARN_("\n");
+				
+				//temporary
+				//for(int i = 2; i < ies.int_ie_content_len; i++) {
+					//	if((ies.int_ie_content[i]& 0x0F)>8){
+					//		LOG_WARN_("Queue %02x\n", ies.int_ie_content[i]& 0x0F);
+					//		tsch_queue_alarm=1;
+					//	}
+				//}
+			}    	
+			
+    }
+#endif /* TSCH_WITH_INT */
+
+    	/*
+    	 * move payloadbuf_dataptr() to the beginning of the next layer for further
+    	 * processing
+    	 */
+    	packetbuf_hdrreduce(ie_length);
+    	strip_payload_termination_ie();
+     }
+  }
+#endif /* TSCH_WITH_INT || TSCH_WITH_SIXTOP */
+
       NETSTACK_NETWORK.input();
     }
   }

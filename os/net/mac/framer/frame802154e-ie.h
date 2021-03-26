@@ -50,6 +50,7 @@
 #include "net/mac/tsch/tsch-asn.h"
 
 #define FRAME802154E_IE_MAX_LINKS       4
+#define INT_SUBIE_ID 0xca
 
 /* Structures used for the Slotframe and Links information element */
 struct tsch_slotframe_and_links_link {
@@ -90,6 +91,14 @@ struct ieee802154_ies {
   const uint8_t *sixtop_ie_content_ptr;
   uint16_t sixtop_ie_content_len;
 #endif /* TSCH_WITH_SIXTOP */
+#if TSCH_WITH_INT
+  /* Payload INT IE */
+  uint8_t int_ie_content[PACKETBUF_IE_SIZE];
+  uint16_t int_ie_content_len;
+  uint8_t int_ie_mode_flags;
+  uint8_t int_ie_seq_no;
+  uint8_t int_ie_bitmap;
+#endif /* TSCH_WITH_INT */
 };
 
 /** Insert various Information Elements **/
@@ -107,11 +116,18 @@ int frame80215e_create_ie_header_list_termination_2(uint8_t *buf, int len,
 /* Payload IE. List termination */
 int frame80215e_create_ie_payload_list_termination(uint8_t *buf, int len,
     struct ieee802154_ies *ies);
-#if TSCH_WITH_SIXTOP
+#if TSCH_WITH_SIXTOP || TSCH_WITH_INT
 /* Payload IE. 6top. Used to nest sub-IEs */
 int frame80215e_create_ie_ietf(uint8_t *buf, int len,
     struct ieee802154_ies *ies);
-#endif /* TSCH_WITH_SIXTOP */
+#endif /* TSCH_WITH_SIXTOP || TSCH_WITH_INT */
+#if TSCH_WITH_INT
+/* Payload IE. INT. Used to nest sub-IEs*/
+int frame80215e_create_ie_int(uint8_t *buf, int len,
+    struct ieee802154_ies *ies);
+int frame80215e_create_ie_int_content(uint8_t *buf, int len, struct ieee802154_ies *ies);
+int frame80215e_retrieve_ie_int_header(struct ieee802154_ies *ies);
+#endif /* TSCH_WITH_INT */
 /* Payload IE. MLME. Used to nest sub-IEs */
 int frame80215e_create_ie_mlme(uint8_t *buf, int len,
     struct ieee802154_ies *ies);

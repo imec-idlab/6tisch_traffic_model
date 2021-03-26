@@ -360,6 +360,13 @@
 #define TSCH_WITH_SIXTOP 0
 #endif
 
+/* To include INT Implementation */
+#ifdef TSCH_CONF_WITH_INT
+#define TSCH_WITH_INT TSCH_CONF_WITH_INT
+#else
+#define TSCH_WITH_INT 0
+#endif
+
 /* A custom feature allowing upper layers to assign packets to
  * a specific slotframe and link */
 #ifdef TSCH_CONF_WITH_LINK_SELECTOR

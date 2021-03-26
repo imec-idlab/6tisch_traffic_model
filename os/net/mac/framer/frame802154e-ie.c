@@ -85,6 +85,7 @@ enum ieee802154e_mlme_long_subie_id {
 #include <net/mac/tsch/sixtop/sixtop.h>
 enum ieee802154e_ietf_subie_id {
   IETF_IE_6TOP = SIXTOP_SUBIE_ID,
+  IETF_IE_INT = INT_SUBIE_ID
 };
 
 #define WRITE16(buf, val) \
@@ -200,20 +201,58 @@ frame80215e_create_ie_payload_list_termination(uint8_t *buf, int len,
   }
 }
 
-#if TSCH_WITH_SIXTOP
-/* Payload IE. 6top. Used to nest sub-IEs */
+#if TSCH_WITH_SIXTOP || TSCH_WITH_INT
+/* Payload IE. INT ot 6top. Used to nest sub-IEs */
 int
 frame80215e_create_ie_ietf(uint8_t *buf, int len, struct ieee802154_ies *ies)
 {
   if(len >= 2 && ies != NULL) {
     create_payload_ie_descriptor(buf,
                                  PAYLOAD_IE_IETF,
-                                 ies->sixtop_ie_content_len);
-    return 2 + ies->sixtop_ie_content_len;
+                                 len);
+    return 2 + len;
   }
   return -1;
 }
-#endif /* TSCH_WITH_SIXTOP */
+#endif /* TSCH_WITH_SIXTOP || TSCH_WITH_INT */
+
+#if TSCH_WITH_INT
+/* Payload IE. INT.*/
+int
+frame80215e_create_ie_int_content(uint8_t *buf, int len, struct ieee802154_ies *ies)
+{
+  if(len >= 2 && ies != NULL) {
+
+    buf[0]=IETF_IE_INT;
+    memcpy(buf+1, ies->int_ie_content, len);
+    return 1 + len;
+  }
+  return -1;
+}
+
+/* Payload IE. INT.*/
+int
+frame80215e_retrieve_ie_int_header(struct ieee802154_ies *ies)
+{
+  if(ies != NULL) {
+    //ies.int_mode=(ies->int_ie_content[0] & 0x80) >>7; 
+    //ies.int_hbh_mode=(ies->int_ie_content[0] & 0x60) >>5;
+   // ies.int_bitmap_mode=(ies->int_ie_content[0] & 0x18) >>3;
+    //ies.int_encoding_mode=(ies->int_ie_content[0] & 0x04) >>2;
+    //ies.int_overflow=(ies->int_ie_content[0] & 0x02) >>1;
+    //ies.int_loopback=(ies->int_ie_content[0] & 0x01);
+    ies->int_ie_mode_flags=ies->int_ie_content[0];
+    ies->int_ie_seq_no=ies->int_ie_content[1];
+    if((ies->int_ie_mode_flags & 0x18) >>3 == 1){
+	ies->int_ie_bitmap=ies->int_ie_content[2];
+    }
+    return 1;
+  }
+  return -1;
+}
+
+
+#endif /* TSCH_WITH_INT */
 
 /* Payload IE. MLME. Used to nest sub-IEs */
 int
@@ -552,9 +591,10 @@ frame802154e_parse_information_elements(const uint8_t *buf, uint8_t buf_size,
             len = 0; /* Reset len as we want to read subIEs and not jump over them */
             LOG_DBG("entering MLME ie with len %u\n", nested_mlme_len);
             break;
-#if TSCH_WITH_SIXTOP
+#if TSCH_WITH_SIXTOP || TSCH_WITH_INT
           case PAYLOAD_IE_IETF:
             switch(*buf) {
+#if TSCH_WITH_SIXTOP 
               case IETF_IE_6TOP:
                 /*
                  * buf points to the Sub-ID field, a one-octet field, now;
@@ -569,12 +609,19 @@ frame802154e_parse_information_elements(const uint8_t *buf, uint8_t buf_size,
                  */
                 ies->sixtop_ie_content_len = len - 1;
                 break;
+#endif /* TSCH_WITH_SIXTOPT*/
+#if TSCH_WITH_INT
+          case IETF_IE_INT:
+                memcpy(ies->int_ie_content, buf + 1, len - 1); /* sequence list */
+                ies->int_ie_content_len = len - 1;
+                break;
+#endif /* TSCH_WITH_INT */
               default:
                 LOG_ERR("frame802154e: unsupported IETF sub-IE %u\n", *buf);
                 break;
             }
             break;
-#endif /* TSCH_WITH_SIXTOP */
+#endif /* TSCH_WITH_SIXTOP || TSCH_WITH_INT*/
           case PAYLOAD_IE_LIST_TERMINATION:
             LOG_DBG("payload ie list termination %u\n", len);
             return (len == 0) ? buf + len - start : -1;

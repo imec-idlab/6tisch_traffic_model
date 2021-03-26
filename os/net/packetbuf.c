@@ -54,6 +54,7 @@ struct packetbuf_addr packetbuf_addrs[PACKETBUF_NUM_ADDRS];
 
 static uint16_t buflen, bufptr;
 static uint8_t hdrlen;
+static uint8_t ielen;
 
 /* The declarations below ensure that the packet buffer is aligned on
    an even 32-bit boundary. On some platforms (most notably the
@@ -61,6 +62,10 @@ static uint8_t hdrlen;
    problems when accessing words. */
 static uint32_t packetbuf_aligned[(PACKETBUF_SIZE + 3) / 4];
 static uint8_t *packetbuf = (uint8_t *)packetbuf_aligned;
+
+/*TELEMETRY IEs*/
+static uint32_t packetbuf_ie_aligned[(PACKETBUF_IE_SIZE + 3) / 4];
+static uint8_t *packetbuf_ie = (uint8_t *)packetbuf_ie_aligned;
 
 #define DEBUG 0
 #if DEBUG
@@ -76,6 +81,7 @@ packetbuf_clear(void)
 {
   buflen = bufptr = 0;
   hdrlen = 0;
+  ielen=0;
 
   packetbuf_attr_clear();
 }
@@ -114,6 +120,23 @@ packetbuf_hdralloc(int size)
 
   /* shift data to the right */
   for(i = packetbuf_totlen() - 1; i >= 0; i--) {
+    packetbuf[i + size] = packetbuf[i];
+  }
+  hdrlen += size;
+  return 1;
+}
+/*---------------------------------------------------------------------------*/
+int
+packetbuf_hdrallocfromend(int size)
+{
+  int16_t i;
+
+  if(size + packetbuf_totlen() > PACKETBUF_SIZE) {
+    return 0;
+  }
+
+  /* shift data to the right */
+  for(i = packetbuf_totlen() - 1; i >= packetbuf_hdrlen(); i--) {
     packetbuf[i + size] = packetbuf[i];
   }
   hdrlen += size;
@@ -233,5 +256,51 @@ packetbuf_holds_broadcast(void)
   return linkaddr_cmp(&packetbuf_addrs[PACKETBUF_ADDR_RECEIVER - PACKETBUF_ADDR_FIRST].addr, &linkaddr_null);
 }
 /*---------------------------------------------------------------------------*/
+void
+packetbuf_ie_clear(void)
+{
+  ielen=0;
+}
+/*---------------------------------------------------------------------------*/
+int
+packetbuf_ie_copyfrom(const void *from, uint8_t len)
+{
+  uint8_t l;
 
+  packetbuf_ie_clear();
+  l = MIN(PACKETBUF_IE_SIZE, len);
+  memcpy(packetbuf_ie, from, l);
+  ielen = l;
+  return l;
+}
+/*---------------------------------------------------------------------------*/
+int
+packetbuf_ie_copyto(void *to)
+{
+  if(ielen > PACKETBUF_IE_SIZE) {
+    return 0;
+  }
+  memcpy(to, packetbuf_ie, ielen);
+  return ielen;
+}
+/*---------------------------------------------------------------------------*/
+uint8_t
+packetbuf_ielen(void)
+{
+  return ielen;
+}
+/*---------------------------------------------------------------------------*/
+void
+packetbuf_set_ielen(uint8_t len)
+{
+  PRINTF("packetbuf_ie_set_len: len %d\n", len);
+  ielen = len;
+}
+
+/*---------------------------------------------------------------------------*/
+void *
+packetbuf_ie_ptr(void)
+{
+  return packetbuf_ie;
+}
 /** @} */

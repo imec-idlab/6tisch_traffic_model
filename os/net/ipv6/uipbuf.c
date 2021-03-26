@@ -39,6 +39,11 @@
 static uint16_t uipbuf_attrs[UIPBUF_ATTR_MAX];
 static uint16_t uipbuf_default_attrs[UIPBUF_ATTR_MAX];
 
+/*TELEMETRY IEs*/
+static uint32_t uipbuf_ie_aligned[(UIPBUF_IE_SIZE + 3) / 4];
+static uint8_t *uipbuf_ie = (uint8_t *)uipbuf_ie_aligned;
+static uint8_t ielen;
+
 /*---------------------------------------------------------------------------*/
 void
 uipbuf_clear(void)
@@ -47,6 +52,8 @@ uipbuf_clear(void)
   uip_ext_len = 0;
   uip_last_proto = 0;
   uipbuf_clear_attr();
+
+  ielen=0;
 }
 /*---------------------------------------------------------------------------*/
 bool
@@ -248,3 +255,42 @@ uipbuf_init(void)
 }
 
 /*---------------------------------------------------------------------------*/
+void
+uipbuf_ie_clear(void)
+{
+  ielen=0;
+}
+/*---------------------------------------------------------------------------*/
+int
+uipbuf_ie_copyfrom(const void *from, uint8_t len)
+{
+  uint16_t l;
+
+  uipbuf_ie_clear();
+  l = MIN(UIPBUF_IE_SIZE, len);
+  memcpy(uipbuf_ie, from, l);
+  ielen = l;
+  return l;
+}
+/*---------------------------------------------------------------------------*/
+int
+uipbuf_ie_copyto(void *to)
+{
+  if(ielen > UIPBUF_IE_SIZE) {
+    return 0;
+  }
+  memcpy(to, uipbuf_ie, ielen);
+  return ielen;
+}
+/*---------------------------------------------------------------------------*/
+uint8_t
+uipbuf_ielen(void)
+{
+  return ielen;
+}
+/*---------------------------------------------------------------------------*/
+void
+uipbuf_set_ielen(uint8_t len)
+{
+  ielen = len;
+}

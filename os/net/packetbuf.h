@@ -68,6 +68,15 @@
 #endif
 
 /**
+ * \brief      The size of the telemetry ies for packetbuf, in bytes
+ */
+#ifdef PACKETBUF_IE_CONF_SIZE
+#define PACKETBUF_IE_SIZE PACKETBUF_IE_CONF_SIZE
+#else
+#define PACKETBUF_IE_SIZE 128
+#endif
+
+/**
  * \brief      Clear and reset the packetbuf
  *
  *             This function clears the packetbuf and resets all
@@ -192,6 +201,17 @@ int packetbuf_hdralloc(int size);
  */
 int packetbuf_hdrreduce(int size);
 
+int packetbuf_hdrallocfromend(int size);
+
+/* TSCH_WITH_INT */
+void packetbuf_ie_clear(void);
+int packetbuf_ie_copyfrom(const void *from, uint8_t len);
+int packetbuf_ie_copyto(void *to);
+uint8_t packetbuf_ielen(void);
+void packetbuf_set_ielen(uint8_t len);
+void *packetbuf_ie_ptr(void);
+
+
 /* Packet attributes stuff below: */
 
 typedef uint16_t packetbuf_attr_t;
@@ -244,6 +264,10 @@ enum {
   PACKETBUF_ATTR_FRAME_COUNTER_BYTES_0_1,
   PACKETBUF_ATTR_FRAME_COUNTER_BYTES_2_3,
 #endif /* LLSEC802154_USES_FRAME_COUNTER */
+
+#if TSCH_WITH_INT
+  PACKETBUF_ATTR_INT,
+#endif /* TSCH_WITH_INT */
 
   /* Scope 2 attributes: used between end-to-end nodes. */
   /* These must be last */

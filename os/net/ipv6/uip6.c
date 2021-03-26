@@ -1572,6 +1572,8 @@ uip_process(uint8_t flag)
      length. */
   uipbuf_set_len_field(UIP_IP_BUF, uip_len - UIP_IPH_LEN);
 
+  uipbuf_set_attr(UIPBUF_ATTR_INT, 1);
+
   UIP_IP_BUF->vtc = 0x60;
   UIP_IP_BUF->tcflow = 0x00;
   UIP_IP_BUF->ttl = uip_udp_conn->ttl;

@@ -150,7 +150,7 @@ int sixtop_output(const linkaddr_t *dest_addr,
 /**
  * \brief Input a packet stored in packetbuf
  */
-void sixtop_input(void);
+void sixtop_input(struct ieee802154_ies *ies);
 
 /**
  * \brief Initialize 6top module
