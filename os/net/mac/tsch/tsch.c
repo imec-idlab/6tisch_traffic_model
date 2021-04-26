@@ -58,7 +58,6 @@
 #include "lib/random.h"
 #include "net/routing/routing.h"
 #include <math.h>
-#include "net/routing/rpl-classic/rpl-private.h"
 
 #if TSCH_WITH_SIXTOP
 #include "net/mac/tsch/sixtop/sixtop.h"
@@ -1199,6 +1198,9 @@ send_packet(mac_callback_t sent, void *ptr)
 			if(remaining_space>required_int_len){
 				
 				uint8_t int_entry_decision=true;
+#if INT_STRATEGY_LEAF_CONTINUOUS
+        int_entry_decision=false;
+#endif
 				
 				
 #if INT_STRATEGY_PROBABILISTIC
@@ -1296,7 +1298,7 @@ send_packet(mac_callback_t sent, void *ptr)
 		}
 #endif
 
-#if INT_STRATEGY_CONTINUOUS
+#if INT_STRATEGY_CONTINUOUS || INT_STRATEGY_LEAF_CONTINUOUS
 		int_decision=true;
 		LOG_WARN("A-K: Initiating INT with seqno %u \n",int_sequence_no);
 #endif
