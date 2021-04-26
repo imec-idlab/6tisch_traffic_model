@@ -69,9 +69,19 @@
 
 #endif /* WITH_SECURITY */
 
+/* Enable Inband Telemetry Implementation */
+//#define TSCH_CONF_WITH_INT 1
+//#define INT_STRATEGY_LEAF_CONTINUOUS 1
+//#define INT_STRATEGY_CONTINUOUS 1
+//#define INT_STRATEGY_PROBABILISTIC 1
+//#define INT_STRATEGY_PERIODICAL 1
+
 /******************************************************/
 /******************* Configure RPL ********************/
 /******************************************************/
+
+/* Enable non-storing mode */
+#define RPL_CONF_MOP RPL_MOP_NON_STORING
 
 /* Disable (DIO) probing */
 #define RPL_CONF_WITH_PROBING 0
@@ -85,13 +95,14 @@
 /*******************************************************/
 
 /* Logging */
-#define LOG_LEVEL_APP                              LOG_LEVEL_DBG
+#define LOG_LEVEL_APP                              LOG_LEVEL_INFO
+#define LOG_CONF_LEVEL_COAP                        LOG_LEVEL_INFO
 #define LOG_CONF_LEVEL_RPL                         LOG_LEVEL_INFO
-#define LOG_CONF_LEVEL_TCPIP                       LOG_LEVEL_WARN
-#define LOG_CONF_LEVEL_IPV6                        LOG_LEVEL_WARN
-#define LOG_CONF_LEVEL_6LOWPAN                     LOG_LEVEL_WARN
+#define LOG_CONF_LEVEL_TCPIP                       LOG_LEVEL_NONE
+#define LOG_CONF_LEVEL_IPV6                        LOG_LEVEL_NONE
+#define LOG_CONF_LEVEL_6LOWPAN                     LOG_LEVEL_NONE
 #define LOG_CONF_LEVEL_MAC                         LOG_LEVEL_INFO
-#define LOG_CONF_LEVEL_FRAMER                      LOG_LEVEL_WARN
+#define LOG_CONF_LEVEL_FRAMER                      LOG_LEVEL_NONE
 #define TSCH_LOG_CONF_PER_SLOT                     0
 
 #endif /* PROJECT_CONF_H_ */

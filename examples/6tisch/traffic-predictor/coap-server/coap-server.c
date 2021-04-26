@@ -44,12 +44,9 @@
 #include "coap-engine.h"
 #include "net/routing/routing.h"
 #include "net/netstack.h"
-
-#if PLATFORM_SUPPORTS_BUTTON_HAL
-#include "dev/button-hal.h"
-#else
-#include "dev/button-sensor.h"
-#endif
+#include "sys/log.h"
+#include "net/ipv6/uip-debug.h"
+#include "rpl-dag-root.h"
 
 /* Log configuration */
 #include "sys/log.h"
@@ -59,30 +56,7 @@
  * Resources to be activated need to be imported through the extern keyword.
  * The build system automatically compiles the resources in the corresponding sub-directory.
  */
-extern coap_resource_t
-  res_hello,
-  res_mirror,
-  res_chunks,
-  res_separate,
-  res_push,
-  res_event,
-  res_sub,
-  res_b1_sep_b2;
-#if PLATFORM_HAS_LEDS
-extern coap_resource_t res_leds, res_toggle;
-#endif
-#if PLATFORM_HAS_LIGHT
-#include "dev/light-sensor.h"
-extern coap_resource_t res_light;
-#endif
-#if PLATFORM_HAS_BATTERY
-#include "dev/battery-sensor.h"
-extern coap_resource_t res_battery;
-#endif
-#if PLATFORM_HAS_TEMPERATURE
-#include "dev/temperature-sensor.h"
-extern coap_resource_t res_temperature;
-#endif
+extern coap_resource_t  res_chunks;
 
 PROCESS(coap_server, "CoAP Server");
 AUTOSTART_PROCESSES(&coap_server);
@@ -105,52 +79,22 @@ PROCESS_THREAD(coap_server, ev, data)
    * WARNING: Activating twice only means alternate path, not two instances!
    * All static variables are the same for each URI path.
    */
-  coap_activate_resource(&res_hello, "test/hello");
-  coap_activate_resource(&res_mirror, "debug/mirror");
   coap_activate_resource(&res_chunks, "test/chunks");
-  coap_activate_resource(&res_separate, "test/separate");
-  coap_activate_resource(&res_push, "test/push");
-#if PLATFORM_HAS_BUTTON
-  coap_activate_resource(&res_event, "sensors/button");
-#endif /* PLATFORM_HAS_BUTTON */
-  coap_activate_resource(&res_sub, "test/sub");
-  coap_activate_resource(&res_b1_sep_b2, "test/b1sepb2");
-#if PLATFORM_HAS_LEDS
-/*  coap_activate_resource(&res_leds, "actuators/leds"); */
-  coap_activate_resource(&res_toggle, "actuators/toggle");
-#endif
-#if PLATFORM_HAS_LIGHT
-  coap_activate_resource(&res_light, "sensors/light");
-  SENSORS_ACTIVATE(light_sensor);
-#endif
-#if PLATFORM_HAS_BATTERY
-  coap_activate_resource(&res_battery, "sensors/battery");
-  SENSORS_ACTIVATE(battery_sensor);
-#endif
-#if PLATFORM_HAS_TEMPERATURE
-  coap_activate_resource(&res_temperature, "sensors/temperature");
-  SENSORS_ACTIVATE(temperature_sensor);
-#endif
 
-  /* Define application-specific events here. */
+  static struct etimer et;
+  /* Print out routing tables every minute */
+  etimer_set(&et, CLOCK_SECOND * 60);
   while(1) {
-    PROCESS_WAIT_EVENT();
-#if PLATFORM_HAS_BUTTON
-#if PLATFORM_SUPPORTS_BUTTON_HAL
-    if(ev == button_hal_release_event) {
-#else
-    if(ev == sensors_event && data == &button_sensor) {
-#endif
-      LOG_DBG("*******BUTTON*******\n");
-
-      /* Call the event_handler for this application-specific event. */
-      res_event.trigger();
-
-      /* Also call the separate response example handler. */
-      res_separate.resume();
-    }
-#endif /* PLATFORM_HAS_BUTTON */
-  }                             /* while (1) */
+    /* Used for non-regression testing */
+    #if (UIP_MAX_ROUTES != 0)
+      LOG_INFO("Routing entries: %u\n", uip_ds6_route_num_routes());
+    #endif
+    #if (UIP_SR_LINK_NUM != 0)
+      LOG_INFO("Routing links: %u\n", uip_sr_num_nodes());
+    #endif
+    PROCESS_YIELD_UNTIL(etimer_expired(&et));
+    etimer_reset(&et);
+  }
 
   PROCESS_END();
 }
