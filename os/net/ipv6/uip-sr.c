@@ -286,6 +286,8 @@ uip_sr_link_snprint(char *buf, int buflen, uip_sr_node_t *link)
       return index;
     }
   }
+  /* DRIES: include current clock time */
+  index += snprintf(buf+index, buflen-index, " time: %lu ms", clock_time()); 
   if(link->lifetime != UIP_SR_INFINITE_LIFETIME) {
     index += snprintf(buf+index, buflen-index,
               " (lifetime: %lu seconds)", (unsigned long)link->lifetime);

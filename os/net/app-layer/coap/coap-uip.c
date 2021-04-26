@@ -359,8 +359,9 @@ process_data(void)
 {
   LOG_INFO("receiving UDP datagram from [");
   LOG_INFO_6ADDR(&UIP_IP_BUF->srcipaddr);
-  LOG_INFO_("]:%u\n", uip_ntohs(UIP_UDP_BUF->srcport));
-  LOG_INFO("  Length: %u\n", uip_datalen());
+  /* DRIES: include CoAP reception time */
+  LOG_INFO_("]:%u ", uip_ntohs(UIP_UDP_BUF->srcport));
+  LOG_INFO_("time: %lu ms, Length: %u\n", clock_time(), uip_datalen());
 
   coap_receive(get_src_endpoint(0), uip_appdata, uip_datalen());
 }
