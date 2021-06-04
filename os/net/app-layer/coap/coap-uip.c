@@ -405,7 +405,8 @@ coap_sendto(const coap_endpoint_t *ep, const uint8_t *data, uint16_t length)
   uip_udp_packet_sendto(udp_conn, data, length, &ep->ipaddr, ep->port);
   LOG_INFO("sent to ");
   LOG_INFO_COAP_EP(ep);
-  LOG_INFO_(" %u bytes\n", length);
+  LOG_INFO_(" %u bytes", length);
+  LOG_INFO_(", time: %lu ms\n", clock_time());
   return length;
 }
 /*---------------------------------------------------------------------------*/
