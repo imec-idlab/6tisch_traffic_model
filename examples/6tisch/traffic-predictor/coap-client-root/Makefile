@@ -7,15 +7,12 @@ PLATFORMS_EXCLUDE = sky z1
 # Configure with TSCH
 MAKE_MAC = MAKE_MAC_TSCH
 
-# Configure with RPL classic
+# Configure with RPL
 #MAKE_ROUTING = MAKE_ROUTING_RPL_CLASSIC
 MAKE_ROUTING = MAKE_ROUTING_RPL_LITE
 
-# Include CoAP resources
-MODULES_REL += ./resources
-
 # Configure as border router
-#MODULES += os/services/rpl-border-router
+MODULES += os/services/rpl-border-router
 
 CONTIKI=../../../..
 

@@ -56,7 +56,7 @@ RESOURCE(res_chunks,
          NULL,
          NULL);
 
-#define CHUNKS_TOTAL    1
+#define CHUNKS_TOTAL    64
 
 static void
 res_get_handler(coap_message_t *request, coap_message_t *response, uint8_t *buffer, uint16_t preferred_size, int32_t *offset)

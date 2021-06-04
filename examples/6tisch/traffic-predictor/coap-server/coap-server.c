@@ -66,7 +66,7 @@ PROCESS_THREAD(coap_server, ev, data)
   PROCESS_BEGIN();
 
   /* Initialize DAG root */
-  NETSTACK_ROUTING.root_start();
+  //NETSTACK_ROUTING.root_start();
 
   NETSTACK_MAC.on();
 

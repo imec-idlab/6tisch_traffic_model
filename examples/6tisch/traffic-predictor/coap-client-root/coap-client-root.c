@@ -98,6 +98,8 @@ PROCESS_THREAD(coap_client, ev, data)
   static coap_endpoint_t server_ep;
   PROCESS_BEGIN();
 
+  NETSTACK_ROUTING.root_start();
+
   NETSTACK_MAC.on();
 
   static coap_message_t request[1];      /* This way the packet can be treated as pointer as usual. */

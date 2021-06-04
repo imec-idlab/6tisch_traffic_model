@@ -45,7 +45,7 @@
 #endif /* WITH_SECURITY */
 
 /* USB serial takes space, free more space elsewhere */
-//#define SICSLOWPAN_CONF_FRAG 0
+#define SICSLOWPAN_CONF_FRAG 1
 //#define UIP_CONF_BUFFER_SIZE 160
 
 /*******************************************************/
