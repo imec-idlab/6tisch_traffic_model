@@ -156,7 +156,7 @@ int32_t max_drift_seen;
 
 /*A-K INT telemetry packet sequence no*/
 uint8_t int_sequence_no;
-#define INT_BITMAP 0xf0 // 0xe0 (0,1,2) or 0x20 for queue
+#define INT_BITMAP 0x88 // 0xe0 (0,1,2) or 0x20 for queue
 #define INT_MODEFLAG 0xa8
 int32_t last_int_asn;
 uint16_t current_int_period=100; //slots
@@ -1148,7 +1148,14 @@ send_packet(mac_callback_t sent, void *ptr)
   if(packetbuf_attr(PACKETBUF_ATTR_INT)==1) {
       hdr_len=NETSTACK_FRAMER.length();
 	  /* specify with PACKETBUF_ATTR_METADATA that packetbuf has IEs */
-	  packetbuf_set_attr(PACKETBUF_ATTR_MAC_METADATA, 1);	  
+	  packetbuf_set_attr(PACKETBUF_ATTR_MAC_METADATA, 1);
+#if INT_STRATEGY_LEAF_PERIODICAL
+    if(NETSTACK_ROUTING.node_is_root()==1){
+      /* remove all INT*/
+      packetbuf_set_attr(PACKETBUF_ATTR_MAC_METADATA, 0);
+      ies.int_ie_content_len=0;
+    } else {
+#endif  
 	  
 	  // Forwarding Packet		
 	  if(packetbuf_ielen()>0){
@@ -1198,7 +1205,7 @@ send_packet(mac_callback_t sent, void *ptr)
 			if(remaining_space>required_int_len){
 				
 				uint8_t int_entry_decision=true;
-#if INT_STRATEGY_LEAF_CONTINUOUS
+#if INT_STRATEGY_LEAF_CONTINUOUS || INT_STRATEGY_LEAF_PERIODICAL
         int_entry_decision=false;
 #endif
 				
@@ -1250,7 +1257,15 @@ send_packet(mac_callback_t sent, void *ptr)
 						int_len++;
 					}
 
-					if((ies.int_ie_bitmap & 0x0F)!=0){
+          //Neighbours
+          if(((ies.int_ie_bitmap & 0x08)>>3)==1){
+            rpl_nbr_t *nbr = nbr_table_head(rpl_neighbors);
+            const linkaddr_t *nbr_lladdr = rpl_neighbor_get_lladdr(nbr);
+            ies.int_ie_content[int_len+1]=nbr_lladdr->u8[LINKADDR_SIZE-1];
+            int_len++;
+          }
+
+          if((ies.int_ie_bitmap & 0x07)!=0){
 						LOG_WARN("A-K: Cannot add INT due to unsupported INT bitmap %u \n",ies.int_ie_bitmap);
 					}
 
@@ -1289,7 +1304,7 @@ send_packet(mac_callback_t sent, void *ptr)
 		uint8_t int_decision=false;
 		uint8_t int_entry_decision=true;
 		
-#if INT_STRATEGY_PERIODICAL
+#if INT_STRATEGY_PERIODICAL || INT_STRATEGY_LEAF_PERIODICAL
 		if((int32_t)tsch_current_asn.ls4b-last_int_asn > current_int_period){
 				
 				last_int_asn = (int32_t)tsch_current_asn.ls4b;
@@ -1372,7 +1387,18 @@ send_packet(mac_callback_t sent, void *ptr)
 					int_len++;
 				}
 
-				if((ies.int_ie_bitmap & 0x0F)!=0){
+        //Neighbours
+        if(((ies.int_ie_bitmap & 0x08)>>3)==1){
+					rpl_nbr_t *nbr = nbr_table_head(rpl_neighbors);
+          while(nbr != NULL) {
+            const linkaddr_t *nbr_lladdr = rpl_neighbor_get_lladdr(nbr);
+            ies.int_ie_content[int_len]=nbr_lladdr->u8[LINKADDR_SIZE-1];
+            int_len++;
+            nbr = nbr_table_next(rpl_neighbors, nbr);
+          }
+				}
+
+        if((ies.int_ie_bitmap & 0x07)!=0){
 						LOG_WARN("A-K: Cannot add INT due to unsupported INT bitmap %u \n",ies.int_ie_bitmap);
 				}
 			}
@@ -1390,9 +1416,12 @@ send_packet(mac_callback_t sent, void *ptr)
 			else{
 					/* specify with PACKETBUF_ATTR_METADATA that packetbuf does not have IEs */
 					packetbuf_set_attr(PACKETBUF_ATTR_MAC_METADATA, 0);
-					LOG_WARN("A-K: Not Adding IE due to INT Strategy");
+					LOG_WARN("A-K: Not Adding IE due to INT Strategy\n");
 			}
 		}
+#if INT_STRATEGY_LEAF_PERIODICAL
+  }
+#endif
    }
 
 #endif /* TSCH_WITH_INT */
@@ -1526,11 +1555,13 @@ packet_input(void)
 			if(NETSTACK_ROUTING.node_is_root()==1){
 				frame80215e_retrieve_ie_int_header(&ies);
 				LOG_WARN("A-K: RECEIVED INT from node [%u] seqno: %u len: %u \n", ies.int_ie_content[4], ies.int_ie_seq_no, ies.int_ie_content_len);
-				LOG_WARN("A-K: INT DATA: len: %u ASN: %u %lu ch: %u rssi: %d data: ", ies.int_ie_content_len,tsch_current_asn.ms1b,tsch_current_asn.ls4b,packetbuf_attr(PACKETBUF_ATTR_CHANNEL),(signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI));
+				LOG_WARN("A-K: INT DATA: len: %u ASN: %u %lu ch: %u rssi: %d neighbours: ", ies.int_ie_content_len,tsch_current_asn.ms1b,tsch_current_asn.ls4b,packetbuf_attr(PACKETBUF_ATTR_CHANNEL),(signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI));
 				/**/
-        for(int i = 0; i < ies.int_ie_content_len; i++) {
-						LOG_WARN_("%02x", ies.int_ie_content[i]);
-				}
+        int i = 5;
+        while(i < ies.int_ie_content_len) {
+          LOG_WARN_("[%u] ", ies.int_ie_content[i]);
+          i++;
+        }
 				LOG_WARN_("\n");
 				
 				//temporary
