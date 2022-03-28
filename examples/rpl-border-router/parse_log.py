@@ -6,16 +6,13 @@ import numpy as np
 
 class node:
     def __init__(self, id):
-        self.id = id
-        self.n = 0
-        self.ns = []
+        self.id = id        # Node ID
+        self.n = 0          # Number of neighbours
+        self.ns = []        # Neighbours
         self.pn = None      # Preferred parent
-        self.pdio = 0
         self.coaptx = 0     # Amount of TX bytes due to CoAP traffic
-        self.udptx = 0      # Amount of TX bytes due to UDP traffic
         self.ebtx = 0       # Amound of TX bytes due to EB traffic
         self.diotx = 0      # Amount of TX bytes due to DIO traffic
-        self.distx = 0      # Amount of TX bytes due to DIS traffic
         self.daotx = 0      # Amount of TX bytes due to DAO traffic
         self.dao_acktx = 0  # Amount of TX bytes due to DAO ACK traffic
         self.eacktx = 0     # Amount of TX bytes due to EACK traffic
@@ -25,18 +22,25 @@ class node:
         self.coaplengths = []
         self.coapresptimes = []
         self.coapresplengths = []
+        ###TODO: include routing table and DAO parents for storing-mode ###
+        self.rt = []        # Routing table
 
-    def update_n(self, ns, pn):
-        self.ns = ns
-        self.n = len(ns)
+    def update_parent(self, pn):
         self.pn = pn
+
+    def add_neighbour(self, neighbour):
+        if(np.any(np.isin(self.ns,neighbour)) == 0):
+            self.ns = np.append(self.ns,neighbour)
+            self.n = len(self.ns)
+
+    ###TODO: include update_n for storing-mode ###
+    def update_rt(self, dest, router):
+        self.rt.append([dest, router])
 
     def reset_bytecount(self):
         self.coaptx = 0
-        self.udptx = 0
         self.ebtx = 0
-        self.diotx = 0   
-        self.distx = 0    
+        self.diotx = 0     
         self.daotx = 0  
         self.dao_acktx = 0 
         self.eacktx = 0
@@ -55,6 +59,17 @@ class node:
         self.coapresptimes.append(new_time)
         self.coapresplengths.append(new_length)
 
+    def print_n_test(self):
+        print("----------")
+        print("Node " + str(self.id))
+        if(self.pn != None):
+            print("Preferred parent: " + str(self.pn.id))
+        if(len(self.rt) != 0):
+            print("Routes: ")
+            for r in self.rt:
+                print("\t" + str(r[0].id) + " via " + str(r[1].id))
+
+
     def print_n(self):
         print("----------")
         print("Node " + str(self.id))
@@ -65,7 +80,6 @@ class node:
         print("Neighbours: " + string)
         if(self.pn != None):
             print("Preferred parent: " + str(self.pn.id))
-        print("P(DIO): " + str(self.pdio))
 
         if(self.lastdao != None):
             print("Last DAO time: " + str(self.lastdao))
@@ -77,28 +91,10 @@ class node:
         print("EB bytes: \t" + str(self.ebtx))
         print("EACK bytes: \t" + str(self.eacktx))
         print("DIO bytes: \t" + str(self.diotx))
-        print("DIS bytes: \t" + str(self.distx))
         print("DAO bytes: \t" + str(self.daotx))
         print("DAO ACK bytes: \t" + str(self.dao_acktx))
-        #print("UDP bytes: " + str(self.udptx))
         print("CoAP bytes: \t" + str(self.coaptx))
-        print("Total bytes: \t" + str(self.udptx + self.diotx + self.ebtx + self.eacktx + self.coaptx + self.daotx + self.dao_acktx + self.diotx))
-        
-
-#     def get_p(self):
-#         cs = p_combinations(self.n)
-#         pi = k/(self.n+1)
-#         string = "-p" + str(self.id) + "+" + str(pi) + "+" + str(1-pi) + "*("
-#         for c in cs:
-#             if(len(c[0]) != 0):
-#                 string += "+"
-#                 for c1 in c[0]:
-#                     string += "p" + str(self.ns[c1].id) + "*"
-#                 string = string[:-1]
-#                 if(len(c[1]) != 0):
-#                     for c2 in c[1]:
-#                         string += "*(1-p" + str(self.ns[c2].id) + ")"
-#         return Eq(parse_expr(string+")"),0)
+        print("Total bytes: \t" + str(self.diotx + self.ebtx + self.eacktx + self.coaptx + self.daotx + self.dao_acktx + self.diotx))
 
 def search_node(nodes,n):
     if(len(nodes) != 0):
@@ -114,6 +110,7 @@ def hex2dec(hex):
 
 REGEXP_ADDR = re.compile('^.*?INFO:\sRPL\s\s\s\s\s\s\s]\slinks:\sfd00::2(?P<node>([0-9a-f]+))')
 REGEXP_PARENT = re.compile('^.*?INFO:\sRPL\s\s\s\s\s\s\s]\slinks:\sfd00::2[0-9a-f]+:[0-9a-f]+:[0-9a-f]+:[0-9a-f]+\s\sto\sfd00::2(?P<parent>([0-9a-f]+)):[0-9a-f]+:[0-9a-f]+:[0-9a-f]+\stime:\s(?P<topology_time>([0-9]+))')
+REGEXP_NB = re.compile('^.*?WARN:\sTSCH\s\s\s\s\s\s]\sINT:\s(?P<neighbour>([0-9a-f]+))\sneighbour\sof\s(?P<node>([0-9a-f]+))')
 REGEXP_DAO = re.compile('^.*?INFO:\sRPL\s\s\s\s\s\s\s]\sreceived\sa\sDAO\sfrom\sfd00::2(?P<dao_origin>([0-9a-f]+)):[0-9a-f]+:[0-9a-f]+:[0-9a-f]+,\stime:\s(?P<dao_time>([0-9]+))')
 REGEXP_COAP = re.compile('^.*?INFO:\scoap-uip\s\s]\sreceiving\sUDP\sdatagram\sfrom\s\[fd00::2(?P<coap_origin>([0-9a-f]+)):[0-9a-f]+:[0-9a-f]+:[0-9a-f]+\]:[0-9]+\stime:\s(?P<coap_time>([0-9]+))\sms,\sLength:\s(?P<coap_length>([0-9]+))')
 REGEXP_COAPRESP = re.compile('^.*?INFO:\scoap-uip\s\s]\ssent\sto\scoap://\[fd00::2(?P<coap_respdest>([0-9a-f]+)):[0-9a-f]+:[0-9a-f]+:[0-9a-f]+\]:[0-9]+\s(?P<coap_resplength>([0-9]+))\sbytes,\stime:\s(?P<coap_resptime>([0-9]+))\sms')
@@ -150,9 +147,18 @@ def update_topology():
                 if(parent_place == -1):
                     nodes.nodes.append(node(p))
                     parent_place = len(nodes.nodes)-1
-                nodes.nodes[node_place].update_n([],nodes.nodes[parent_place])
+                nodes.nodes[node_place].update_parent(nodes.nodes[parent_place])
                 nodes.nodes[node_place].update_topology_time(p_t)
             nodes.count += 1
+        matchnb = re.match(REGEXP_NB, chomped_line)
+        if(matchnb):
+            n = (int)(matchnb.group("node"))
+            nb = (int)(matchnb.group("neighbour"))
+            node_place = search_node(nodes.nodes,n)
+            if(node_place != -1):
+                neighbour_place = search_node(nodes.nodes,nb)
+                if(neighbour_place != -1):
+                    nodes.nodes[node_place].add_neighbour(nodes.nodes[neighbour_place])
         matchdao = re.match(REGEXP_DAO, chomped_line)
         if(matchdao):
             dao_o = matchdao.group("dao_origin")
