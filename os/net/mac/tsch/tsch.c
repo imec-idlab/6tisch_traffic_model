@@ -1554,15 +1554,15 @@ packet_input(void)
 			
 			if(NETSTACK_ROUTING.node_is_root()==1){
 				frame80215e_retrieve_ie_int_header(&ies);
-				LOG_WARN("A-K: RECEIVED INT from node [%u] seqno: %u len: %u \n", ies.int_ie_content[4], ies.int_ie_seq_no, ies.int_ie_content_len);
-				LOG_WARN("A-K: INT DATA: len: %u ASN: %u %lu ch: %u rssi: %d neighbours: ", ies.int_ie_content_len,tsch_current_asn.ms1b,tsch_current_asn.ls4b,packetbuf_attr(PACKETBUF_ATTR_CHANNEL),(signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI));
+				//LOG_WARN("A-K: RECEIVED INT from node [%u] seqno: %u len: %u \n", ies.int_ie_content[4], ies.int_ie_seq_no, ies.int_ie_content_len);
+				//LOG_WARN("A-K: INT DATA: len: %u ASN: %u %lu ch: %u rssi: %d neighbours: ", ies.int_ie_content_len,tsch_current_asn.ms1b,tsch_current_asn.ls4b,packetbuf_attr(PACKETBUF_ATTR_CHANNEL),(signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI));
+        LOG_WARN("INT: RECEIVED INT from node %u:\n", ies.int_ie_content[4]);
 				/**/
         int i = 5;
         while(i < ies.int_ie_content_len) {
-          LOG_WARN_("[%u] ", ies.int_ie_content[i]);
+          LOG_WARN("INT: %u neighbour of %u\n", ies.int_ie_content[i], ies.int_ie_content[4]);
           i++;
         }
-				LOG_WARN_("\n");
 				
 				//temporary
 				//for(int i = 2; i < ies.int_ie_content_len; i++) {
