@@ -65,7 +65,7 @@ PROCESS_THREAD(coap_server, ev, data)
 {
   PROCESS_BEGIN();
 
-  /* Initialize DAG root */
+  /* Initialize DAG root, not for P2P traffic */
   //NETSTACK_ROUTING.root_start();
 
   NETSTACK_MAC.on();
@@ -85,7 +85,7 @@ PROCESS_THREAD(coap_server, ev, data)
   /* Print out routing tables every minute */
   etimer_set(&et, CLOCK_SECOND * 60);
   while(1) {
-    /* Used for non-regression testing */
+    // Non-storing mode
     #if (UIP_MAX_ROUTES != 0)
       LOG_INFO("Routing entries: %u\n", uip_ds6_route_num_routes());
     #endif
@@ -94,6 +94,22 @@ PROCESS_THREAD(coap_server, ev, data)
     #endif
     PROCESS_YIELD_UNTIL(etimer_expired(&et));
     etimer_reset(&et);
+
+    // Storing mode
+    PROCESS_YIELD();
+    if(etimer_expired(&et)) {
+      LOG_INFO("Routing entries: %u\n", uip_ds6_route_num_routes());
+      uip_ds6_route_t *route = uip_ds6_route_head();
+      while(route) {
+        LOG_INFO("Route ");
+        LOG_INFO_6ADDR(&route->ipaddr);
+        LOG_INFO_("/128 via ");
+        LOG_INFO_6ADDR(uip_ds6_route_nexthop(route));
+        LOG_INFO_("\n");
+        route = uip_ds6_route_next(route);
+      }
+      etimer_reset(&et);
+    }
   }
 
   PROCESS_END();

@@ -7,7 +7,7 @@ PLATFORMS_EXCLUDE = sky z1
 # Configure with TSCH
 MAKE_MAC = MAKE_MAC_TSCH
 
-# Configure with RPL
+# Configure with RPL: Lite for non-storing and Classic for storing
 #MAKE_ROUTING = MAKE_ROUTING_RPL_CLASSIC
 MAKE_ROUTING = MAKE_ROUTING_RPL_LITE
 
