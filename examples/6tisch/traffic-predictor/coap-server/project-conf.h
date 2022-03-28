@@ -39,60 +39,7 @@
 #ifndef PROJECT_CONF_H_
 #define PROJECT_CONF_H_
 
-/* Set to enable TSCH security */
-#ifndef WITH_SECURITY
-#define WITH_SECURITY 0
-#endif /* WITH_SECURITY */
-
-/* USB serial takes space, free more space elsewhere */
-#define SICSLOWPAN_CONF_FRAG 1
-//#define UIP_CONF_BUFFER_SIZE 160
-
-/*******************************************************/
-/******************* Configure TSCH ********************/
-/*******************************************************/
-
-/* IEEE802.15.4 PANID */
-#define IEEE802154_CONF_PANID 0x353 //3S
-
-/* Do not start TSCH at init, wait for NETSTACK_MAC.on() */
-#define TSCH_CONF_AUTOSTART 0
-
-/* 6TiSCH minimal schedule length.
- * Larger values result in less frequent active slots: reduces capacity and saves energy. */
-#define TSCH_SCHEDULE_CONF_DEFAULT_LENGTH 3
-
-#if WITH_SECURITY
-
-/* Enable security */
-#define LLSEC802154_CONF_ENABLED 1
-
-#endif /* WITH_SECURITY */
-
-/* Enable Inband Telemetry Implementation */
-//#define TSCH_CONF_WITH_INT 1
-//#define INT_STRATEGY_LEAF_CONTINUOUS 1
-//#define INT_STRATEGY_CONTINUOUS 1
-//#define INT_STRATEGY_PROBABILISTIC 1
-//#define INT_STRATEGY_PERIODICAL 1
-
-/******************************************************/
-/******************* Configure RPL ********************/
-/******************************************************/
-
-/* Enable non-storing mode */
-#define RPL_CONF_MOP RPL_MOP_NON_STORING
-
-/* Disable (DIO) probing */
-#define RPL_CONF_WITH_PROBING 0
-
-/* Disable DAO refreshing */ 
-#define RPL_CONF_DIO_REFRESH_DAO_ROUTES 0
-#define RPL_CONF_WITH_DAO_ACK 1
-
-/*******************************************************/
-/************* Other system configuration **************/
-/*******************************************************/
+#include "../project-conf.h"
 
 /* Logging */
 #define LOG_LEVEL_APP                              LOG_LEVEL_INFO
