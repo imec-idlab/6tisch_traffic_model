@@ -1286,8 +1286,13 @@ send_packet(mac_callback_t sent, void *ptr)
             /* Get current ASN */
             ies.int_ie_content[int_len]= (tsch_current_asn.ls4b)>>8;
             ies.int_ie_content[int_len+1]=tsch_current_asn.ls4b;
+#if INT_STRATEGY_DAO
+            LOG_WARN("INT: Writing DAO ASN: %u %lu\n", tsch_current_asn.ms1b, tsch_current_asn.ls4b);
+#else
             LOG_WARN("INT: Writing current ASN: %u %lu\n", tsch_current_asn.ms1b, tsch_current_asn.ls4b);
+#endif /* INT_STRATEGY_DAO */
             int_len += 2;
+#if (!INT_STRATEGY_DAO)
             /* Get difference of last DAO ASN */
             temp = tsch_current_asn;
             TSCH_ASN_DEC_ASN(temp,last_dao_asn);
@@ -1296,6 +1301,7 @@ send_packet(mac_callback_t sent, void *ptr)
             ies.int_ie_content[int_len+2]=temp.ls4b;
             LOG_WARN("INT: Writing DAO ASN: %u %lu\n", last_dao_asn.ms1b, last_dao_asn.ls4b);
             int_len += 3;
+#endif /* (!INT_STRATEGY_DAO) */
             /* Get difference of last DIO ASN */
             temp = tsch_current_asn;
             TSCH_ASN_DEC_ASN(temp,last_dio_asn);
@@ -1422,7 +1428,7 @@ send_packet(mac_callback_t sent, void *ptr)
     } 
 #endif
 
-#if INT_STRATEGY_LEAF_PERIODICAL
+#if INT_STRATEGY_CONTINUOUS
 		int_decision=true;
 		LOG_WARN("INT: Initiating INT with seqno %u \n",int_sequence_no);
 #endif
@@ -1501,8 +1507,13 @@ send_packet(mac_callback_t sent, void *ptr)
           /* Get current ASN */
           ies.int_ie_content[int_len]= (tsch_current_asn.ls4b)>>8;
 					ies.int_ie_content[int_len+1]=tsch_current_asn.ls4b;
+#if INT_STRATEGY_DAO
+          LOG_WARN("INT: Writing DAO ASN: %u %lu\n", tsch_current_asn.ms1b, tsch_current_asn.ls4b);
+#else
           LOG_WARN("INT: Writing current ASN: %u %lu\n", tsch_current_asn.ms1b, tsch_current_asn.ls4b);
+#endif /* INT_STRATEGY_DAO */
 					int_len += 2;
+#if (!INT_STRATEGY_DAO)
           /* Get difference of last DAO ASN */
           temp = tsch_current_asn;
           TSCH_ASN_DEC_ASN(temp,last_dao_asn);
@@ -1511,6 +1522,7 @@ send_packet(mac_callback_t sent, void *ptr)
 					ies.int_ie_content[int_len+2]=temp.ls4b;
           LOG_WARN("INT: Writing DAO ASN: %u %lu\n", last_dao_asn.ms1b, last_dao_asn.ls4b);
 					int_len += 3;
+#endif /* (!INT_STRATEGY_DAO) */
           /* Get difference of last DIO ASN */
           temp = tsch_current_asn;
           TSCH_ASN_DEC_ASN(temp,last_dio_asn);
@@ -1757,9 +1769,14 @@ packet_input(void)
           if(i+1 < ies.int_ie_content_len) {
             tx_asn.ls4b = (tsch_current_asn.ls4b & 0xFFFF0000) + ((ies.int_ie_content[i]<<8) + ies.int_ie_content[i+1]);
             tx_asn.ms1b = tsch_current_asn.ms1b;
+#if INT_STRATEGY_DAO
+            LOG_WARN("INT: last DAO at ASN %u %lu\n", tx_asn.ms1b, tx_asn.ls4b);
+#else
             LOG_WARN("INT: TX at ASN %u %lu\n", tx_asn.ms1b, tx_asn.ls4b);
+#endif /* INT_STRATEGY_DAO */
           }
           i += 2;
+#if (!INT_STRATEGY_DAO)
           /* Get ASN of last DAO transmission */
           if(i+2 < ies.int_ie_content_len) {
             diff.ls4b = ((ies.int_ie_content[i]<<16) + (ies.int_ie_content[i+1]<<8) + ies.int_ie_content[i+2]);
@@ -1769,6 +1786,7 @@ packet_input(void)
             LOG_WARN("INT: last DAO at ASN %u %lu\n", res.ms1b, res.ls4b);
           }
           i += 3;
+#endif /* (!INT_STRATEGY_DAO) */
           /* Get ASN of last DIO transmission */
           if(i+2 < ies.int_ie_content_len) {
             diff.ls4b = ((ies.int_ie_content[i]<<16) + (ies.int_ie_content[i+1]<<8) + ies.int_ie_content[i+2]);
