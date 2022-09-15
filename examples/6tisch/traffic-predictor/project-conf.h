@@ -66,24 +66,17 @@
 
 #endif /* WITH_SECURITY */
 
-/* Enable Inband Telemetry Implementation */
-#define TSCH_CONF_WITH_INT 1
-//#define INT_STRATEGY_LEAF_CONTINUOUS 1
-//#define TSCH_CONF_WITH_INT 1
-//#define INT_STRATEGY_CONTINUOUS 1
-//#define INT_STRATEGY_PROBABILISTIC 1
-//#define INT_STRATEGY_PERIODICAL 1
-#define INT_STRATEGY_LEAF_PERIODICAL 1
-
-#define INT_COAP_INTERVAL   60
-
 /******************************************************/
 /******************* Configure RPL ********************/
 /******************************************************/
 
-/* Enable non-storing mode */
+/* Choose MOP */
+#define RPL_STORING 1
+#if RPL_STORING
+#define RPL_CONF_MOP RPL_MOP_STORING_MULTICAST
+#else
 #define RPL_CONF_MOP RPL_MOP_NON_STORING
-//#define RPL_CONF_MOP RPL_MOP_STORING_MULTICAST
+#endif
 
 /* Disable (DIO) probing */
 #define RPL_CONF_WITH_PROBING 0
@@ -92,9 +85,25 @@
 #define RPL_CONF_DIO_REFRESH_DAO_ROUTES 0
 #define RPL_CONF_WITH_DAO_ACK 1
 
+/******************************************************/
+/******************* Configure INT ********************/
+/******************************************************/
+
+/* Enable Inband Telemetry Implementation */
+#define TSCH_CONF_WITH_INT 1
+#if RPL_STORING
+#define INT_STRATEGY_DAO 1
+#define INT_BITMAP 0x8F
+#else
+#define INT_STRATEGY_LEAF_PERIODICAL 1
+#define INT_PERIOD 200
+#define INT_BITMAP 0x88
+#endif
+
 /*******************************************************/
 /******************* Configure CoAP ********************/
 /*******************************************************/
 
 /* Enable client-side support for COAP observe */
-#define COAP_OBSERVE_CLIENT            1
+#define COAP_OBSERVE_CLIENT 1
+#define INT_COAP_INTERVAL   60
