@@ -1828,6 +1828,8 @@ output(const linkaddr_t *localdest)
 #if TSCH_WITH_INT
     if(!linkaddr_cmp(&dest, &linkaddr_null))  {
       packetbuf_set_attr(PACKETBUF_ATTR_INT, uipbuf_get_attr(UIPBUF_ATTR_INT));
+      packetbuf_set_attr(PACKETBUF_ATTR_DAO_INT, uipbuf_get_attr(UIPBUF_ATTR_DAO_INT));
+      packetbuf_set_attr(PACKETBUF_ATTR_DIO_INT, uipbuf_get_attr(UIPBUF_ATTR_DIO_INT));
 		  packetbuf_set_attr(PACKETBUF_ATTR_RSSI, uipbuf_get_attr(UIPBUF_ATTR_RSSI));
 		  packetbuf_set_attr(PACKETBUF_ATTR_CHANNEL, uipbuf_get_attr(UIPBUF_ATTR_CHANNEL));
 		  packetbuf_set_attr(PACKETBUF_ATTR_TIMESTAMP, uipbuf_get_attr(UIPBUF_ATTR_TIMESTAMP));
@@ -1838,6 +1840,7 @@ output(const linkaddr_t *localdest)
       }
     } else{
       packetbuf_set_attr(PACKETBUF_ATTR_INT, 0);
+      packetbuf_set_attr(PACKETBUF_ATTR_DIO_INT, uipbuf_get_attr(UIPBUF_ATTR_DIO_INT));
 	    packetbuf_ie_clear();
     }
 #endif /* TSCH_WITH_INT */    

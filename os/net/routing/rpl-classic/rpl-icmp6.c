@@ -614,6 +614,9 @@ dio_output(rpl_instance_t *instance, uip_ipaddr_t *uc_addr)
 #else /* RPL_LEAF_ONLY */
   /* Unicast requests get unicast replies! */
   if(uc_addr == NULL) {
+#if TSCH_WITH_INT
+    uipbuf_set_attr(UIPBUF_ATTR_DIO_INT,1);;
+#endif //TSCH_WITH_INT
     LOG_INFO("Sending a multicast-DIO with rank %u\n",
            (unsigned)instance->current_dag->rank);
     uip_create_linklocal_rplnodes_mcast(&addr);
@@ -1247,6 +1250,13 @@ dao_output_target_seq(rpl_parent_t *parent, uip_ipaddr_t *prefix,
     /* Send DAO to root */
     dest_ipaddr = &parent->dag->dag_id;
   }
+
+#if TSCH_WITH_INT
+  uipbuf_set_attr(UIPBUF_ATTR_DAO_INT,1);
+#if INT_STRATEGY_DAO
+  uipbuf_set_attr(UIPBUF_ATTR_INT,1);
+#endif /* INT_STRATEGY_DAO */
+#endif /* TSCH_WITH_INT */
 
   LOG_INFO("Sending a %sDAO with sequence number %u, lifetime %u, prefix ",
          lifetime == RPL_ZERO_LIFETIME ? "No-Path " : "", seq_no, lifetime);

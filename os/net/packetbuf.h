@@ -267,6 +267,8 @@ enum {
 
 #if TSCH_WITH_INT
   PACKETBUF_ATTR_INT,
+  PACKETBUF_ATTR_DAO_INT,
+  PACKETBUF_ATTR_DIO_INT,
 #endif /* TSCH_WITH_INT */
 
   /* Scope 2 attributes: used between end-to-end nodes. */

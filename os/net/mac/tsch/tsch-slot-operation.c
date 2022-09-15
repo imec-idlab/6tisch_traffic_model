@@ -729,6 +729,13 @@ PT_THREAD(tsch_tx_slot(struct pt *pt, struct rtimer *t))
       tsch_stats_tx_packet(current_neighbor, mac_tx_status, tsch_current_channel);
     }
 
+#if TSCH_WITH_INT
+    if(current_neighbor == n_eb) {
+        /* Store ASN of last EB transmission */
+        last_eb_tx_asn = tsch_current_asn;
+#endif /* TSCH_WITH_INT */
+    }
+    
     /* Log every tx attempt */
     TSCH_LOG_ADD(tsch_log_tx,
         log->tx.mac_tx_status = mac_tx_status;

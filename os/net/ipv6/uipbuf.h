@@ -217,9 +217,11 @@ enum {
   UIPBUF_ATTR_MAX_MAC_TRANSMISSIONS, /**< MAX transmissions of the packet MAC */
   UIPBUF_ATTR_FLAGS,   /**< Flags that can control lower layers.  see above. */
   UIPBUF_ATTR_INT,   /**< Telemetry Attributes. */
+  UIPBUF_ATTR_DAO_INT,   /**< Telemetry Attributes. */
+  UIPBUF_ATTR_DIO_INT,   /**< Telemetry Attributes. */
   UIPBUF_ATTR_TIMESTAMP,   /**< Telemetry Attributes. */
   UIPBUF_ATTR_RSSI,   /**< Telemetry Attributes. */
-  UIPBUF_ATTR_CHANNEL,   /**< Telemetry Attributes. */  
+  UIPBUF_ATTR_CHANNEL,   /**< Telemetry Attributes. */
   UIPBUF_ATTR_MAX
 };
 
