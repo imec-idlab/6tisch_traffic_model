@@ -78,6 +78,15 @@ struct tsch_asn_divisor_t {
     (asn).ls4b = new_ls4b; \
 } while(0);
 
+/** \brief Decrement an ASN by an ASN (40 bits) */
+#define TSCH_ASN_DEC_ASN(asn1, asn2) do { \
+    uint8_t new_ms1b = (asn1).ms1b - (asn2).ms1b; \
+    uint32_t new_ls4b = (asn1).ls4b - (asn2).ls4b; \
+    if(new_ls4b > (asn1).ls4b) { new_ms1b--; } \
+    (asn1).ms1b = new_ms1b; \
+    (asn1).ls4b = new_ls4b; \
+} while(0);
+
 /** \brief Returns the 32-bit diff between asn1 and asn2 */
 #define TSCH_ASN_DIFF(asn1, asn2) \
   ((asn1).ls4b - (asn2).ls4b)
