@@ -264,6 +264,19 @@ rpl_set_preferred_parent(rpl_dag_t *dag, rpl_parent_t *p)
   }
 }
 /*---------------------------------------------------------------------------*/
+rpl_parent_t *
+rpl_get_preferred_parent(rpl_instance_t *instance)
+{
+  rpl_parent_t *p = nbr_table_head(rpl_parents);
+  while(p != NULL){
+    if(p == instance->current_dag->preferred_parent){
+      return instance->current_dag->preferred_parent;
+    }
+    p = nbr_table_next(rpl_parents, p);
+  }
+  return NULL;
+}
+/*---------------------------------------------------------------------------*/
 /* Greater-than function for the lollipop counter.                      */
 /*---------------------------------------------------------------------------*/
 static int
