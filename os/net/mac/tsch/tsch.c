@@ -68,6 +68,10 @@
 #error TSCH: FRAME802154_VERSION must be at least FRAME802154_IEEE802154_2015
 #endif
 
+#if ROUTING_CONF_RPL_CLASSIC
+#include "rpl-private.h"
+#endif
+
 /* Log configuration */
 #include "sys/log.h"
 #define LOG_MODULE "TSCH"
@@ -155,11 +159,21 @@ int32_t min_drift_seen;
 int32_t max_drift_seen;
 
 /*A-K INT telemetry packet sequence no*/
+#if TSCH_WITH_INT
 uint8_t int_sequence_no;
-#define INT_BITMAP 0x88 // 0xe0 (0,1,2) or 0x20 for queue
+//#define INT_BITMAP 0x8F // MSB->LSB: node address, channel&ASN, queue size, RSSI, control mess. ASN, pref. parent, routes, neighbours
 #define INT_MODEFLAG 0xa8
 int32_t last_int_asn;
-uint16_t current_int_period=100; //slots
+#ifdef INT_PERIOD
+uint32_t current_int_period = INT_PERIOD*100; // assuming 10 ms slots
+#else
+uint32_t current_int_period = 100;
+#endif
+struct tsch_asn_t last_dao_asn;
+struct tsch_asn_t last_dio_asn;
+struct tsch_asn_t last_eb_gen_asn;
+struct tsch_asn_t last_eb_tx_asn;
+#endif /* TSCH_WITH_INT */
 
 /* TSCH processes and protothreads */
 PT_THREAD(tsch_scan(struct pt *pt));
@@ -923,7 +937,6 @@ PROCESS_THREAD(tsch_send_eb_process, ev, data)
 
   while(1) {
     unsigned long delay;
-
     if(!tsch_is_associated) {
       LOG_DBG("skip sending EB: not joined a TSCH network\n");
     } else if(tsch_current_eb_period <= 0) {
@@ -945,6 +958,11 @@ PROCESS_THREAD(tsch_send_eb_process, ev, data)
       /* Prepare the EB packet and schedule it to be sent */
       if(tsch_packet_create_eb(&hdr_len, &tsch_sync_ie_offset) > 0) {
         struct tsch_packet *p;
+#if TSCH_WITH_INT
+        /* Store ASN of last EB generation */
+        last_eb_gen_asn = tsch_current_asn;
+        // LOG_WARN("INT: EB generation, ASN: %u %lu\n", last_eb_gen_asn.ms1b, last_eb_gen_asn.ls4b);
+#endif /* TSCH_WITH_INT */
         /* Enqueue EB packet, for a single transmission only */
         if(!(p = tsch_queue_add_packet(&tsch_eb_address, 1, NULL, NULL))) {
           LOG_ERR("! could not enqueue EB packet\n");
@@ -1143,13 +1161,19 @@ send_packet(mac_callback_t sent, void *ptr)
 #if TSCH_WITH_INT
   struct ieee802154_ies ies;
   memset(&ies, 0, sizeof(ies));
-  
+  /* Set last DIO/DAO if this is a DIO/DAO */
+  if(packetbuf_attr(PACKETBUF_ATTR_DIO_INT) == 1) {
+      last_dio_asn = tsch_current_asn;
+  }
+  if(packetbuf_attr(PACKETBUF_ATTR_DAO_INT) == 1) {
+    last_dao_asn = tsch_current_asn;
+  }
 
   if(packetbuf_attr(PACKETBUF_ATTR_INT)==1) {
       hdr_len=NETSTACK_FRAMER.length();
 	  /* specify with PACKETBUF_ATTR_METADATA that packetbuf has IEs */
 	  packetbuf_set_attr(PACKETBUF_ATTR_MAC_METADATA, 1);
-#if INT_STRATEGY_LEAF_PERIODICAL
+#if INT_STRATEGY_LEAF_PERIODICAL || INT_STRATEGY_DAO
     if(NETSTACK_ROUTING.node_is_root()==1){
       /* remove all INT*/
       packetbuf_set_attr(PACKETBUF_ATTR_MAC_METADATA, 0);
@@ -1178,7 +1202,7 @@ send_packet(mac_callback_t sent, void *ptr)
 			    rssi_char= (((packetbuf_attr(PACKETBUF_ATTR_RSSI))&0x8000)>>8)+((packetbuf_attr(PACKETBUF_ATTR_RSSI)) & 0x007F);
 		}
 
-    	LOG_INFO("A-K: Forwarding Data Packet with INT rssi: %d char_rssi: %u transit delay: %u\n", (signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI),rssi_char, transit_delay);
+    	LOG_INFO("INT: Forwarding Data Packet with INT rssi: %d char_rssi: %u transit delay: %u\n", (signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI),rssi_char, transit_delay);
 
 		if(is_hop_by_hop && !is_overflow){ 
 			
@@ -1187,6 +1211,7 @@ send_packet(mac_callback_t sent, void *ptr)
 #if ROUTING_CONF_RPL_LITE
 			uint8_t root_distance = ((curr_instance.dag.rank - ROOT_RANK)/RPL_MIN_HOPRANKINC);
 #elif ROUTING_CONF_RPL_CLASSIC
+      rpl_instance_t *default_instance = rpl_get_default_instance();
       uint8_t root_distance = ((default_instance->current_dag->rank - ROOT_RANK(default_instance))/RPL_MIN_HOPRANKINC);
 #endif
 		
@@ -1205,7 +1230,7 @@ send_packet(mac_callback_t sent, void *ptr)
 			if(remaining_space>required_int_len){
 				
 				uint8_t int_entry_decision=true;
-#if INT_STRATEGY_LEAF_CONTINUOUS || INT_STRATEGY_LEAF_PERIODICAL
+#if INT_STRATEGY_LEAF_PERIODICAL || INT_STRATEGY_DAO
         int_entry_decision=false;
 #endif
 				
@@ -1215,27 +1240,30 @@ send_packet(mac_callback_t sent, void *ptr)
 			uint8_t random_num = (random_rand()*random_rand())%100;
 			if(random_num>=(100*remaining_int_entry)/root_distance){
 				int_entry_decision=false;
-				LOG_WARN("A-K: Skip INT with remaining space %u with distance: %u\n",remaining_int_entry, root_distance);
+				LOG_WARN("INT: Skip INT with remaining space %u with distance: %u\n",remaining_int_entry, root_distance);
 			} 
 			else{	
-				LOG_WARN("A-K: Add INT with remaining space %u with distance: %u\n",remaining_int_entry, root_distance);
+				LOG_WARN("INT: Add INT with remaining space %u with distance: %u\n",remaining_int_entry, root_distance);
 			}		
 #endif
 				if(int_entry_decision){
-					LOG_WARN("A-K: Adding INT\n");
+					LOG_WARN("INT: Adding INT\n");
 					uint8_t int_len=0;
+
+          // Node linkaddress
 					if(((ies.int_ie_bitmap & 0x80)>>7)==1){
-						ies.int_ie_content[packetbuf_ielen()+int_len]=linkaddr_node_addr.u8[LINKADDR_SIZE-2];
-						ies.int_ie_content[packetbuf_ielen()+int_len+1]=linkaddr_node_addr.u8[LINKADDR_SIZE-1];
-						int_len=int_len+2;
+						ies.int_ie_content[packetbuf_ielen()+int_len]=linkaddr_node_addr.u8[LINKADDR_SIZE-1];
+						int_len=int_len+1;
 					}
+
+          // 4bits channel + 12 bits timestamp (last 12 bits of ASN)
 					if(((ies.int_ie_bitmap & 0x40)>>6)==1){
-						// 4bits channel + 12 bits timestamp (last 12 bits of ASN)
 						ies.int_ie_content[packetbuf_ielen()+int_len]=((packetbuf_attr(PACKETBUF_ATTR_TIMESTAMP) & 0x00000F00)>>8) + (((packetbuf_attr(PACKETBUF_ATTR_CHANNEL) - 11) & 0x0F)<<4);
 						ies.int_ie_content[packetbuf_ielen()+int_len+1]=packetbuf_attr(PACKETBUF_ATTR_TIMESTAMP);
 						int_len=int_len+2;
 					}
 
+          // Queue size
 					if(((ies.int_ie_bitmap & 0x20)>>5)==1){
             struct tsch_neighbor *n = NULL;
             uint8_t queue_size = -1;
@@ -1243,30 +1271,97 @@ send_packet(mac_callback_t sent, void *ptr)
               n = tsch_queue_add_nbr(addr);
               queue_size = (uint8_t) tsch_queue_nbr_packet_count(n);
             }
-            /**/
 						if(queue_size > 15 || transit_delay > 15){
-							LOG_WARN("A-K: Large transit delay (%u) or queue length (%u)\n", transit_delay, queue_size);
+							LOG_WARN("INT: Large transit delay (%u) or queue length (%u)\n", transit_delay, queue_size);
 						}
 						ies.int_ie_content[packetbuf_ielen()+int_len]=(queue_size & 0x0F)+((transit_delay & 0x0F)<<4);
 						int_len++;
 					}
 					
-					//RSSI
+					// RSSI
 					if(((ies.int_ie_bitmap & 0x10)>>4)==1){
 						ies.int_ie_content[packetbuf_ielen()+int_len]=packetbuf_attr(PACKETBUF_ATTR_RSSI);
 						int_len++;
 					}
 
-          //Neighbours
-          if(((ies.int_ie_bitmap & 0x08)>>3)==1){
-            rpl_nbr_t *nbr = nbr_table_head(rpl_neighbors);
-            const linkaddr_t *nbr_lladdr = rpl_neighbor_get_lladdr(nbr);
-            ies.int_ie_content[int_len+1]=nbr_lladdr->u8[LINKADDR_SIZE-1];
-            int_len++;
+#if ROUTING_CONF_RPL_CLASSIC
+        // ASN of last DAO, DIO & EB
+        if(((ies.int_ie_bitmap & 0x08)>>3)==1) {
+          // Get ASN of DAO transmission
+          ies.int_ie_content[int_len]= (last_dao_asn.ls4b)>>8;
+					ies.int_ie_content[int_len+1]=last_dao_asn.ls4b;
+          LOG_WARN("INT: Writing DAO ASN: %u %lu\n", last_dao_asn.ms1b, last_dao_asn.ls4b);
+					int_len += 2;
+          // Get ASN of last DIO transmission
+          ies.int_ie_content[int_len]= (last_dio_asn.ls4b)>>16;
+          ies.int_ie_content[int_len+1]= (last_dio_asn.ls4b)>>8;
+					ies.int_ie_content[int_len+2]=last_dio_asn.ls4b;
+          LOG_WARN("INT: Writing DIO ASN: %u %lu\n", last_dio_asn.ms1b, last_dio_asn.ls4b);
+          int_len += 3;
+          // Get ASN of last EB generation
+          ies.int_ie_content[int_len]= (last_eb_gen_asn.ls4b)>>8;
+					ies.int_ie_content[int_len+1]=last_eb_gen_asn.ls4b;
+          LOG_WARN("INT: Writing EB generation ASN: %u %lu\n", last_eb_gen_asn.ms1b, last_eb_gen_asn.ls4b);
+          int_len += 2;
+          // Get ASN of last EB transmission
+          ies.int_ie_content[int_len]= (last_eb_tx_asn.ls4b)>>8;
+					ies.int_ie_content[int_len+1]=last_eb_tx_asn.ls4b;
+          LOG_WARN("INT: Writing EB transmission ASN: %u %lu\n", last_eb_tx_asn.ms1b, last_eb_tx_asn.ls4b);
+          int_len += 2;
+        }
+
+        // RPL preferred parent
+        if(((ies.int_ie_bitmap & 0x04)>>2)==1) {
+          // Get preferred parent
+          rpl_parent_t *pp = rpl_get_preferred_parent(default_instance);
+          if(pp != NULL){
+            const linkaddr_t *pp_lladdr = rpl_get_parent_lladdr(pp);
+            ies.int_ie_content[int_len]=pp_lladdr->u8[LINKADDR_SIZE-1];
+          } else {
+            ies.int_ie_content[int_len]=0;
           }
+          int_len++;
+        }
+
+        // Routes
+        if(((ies.int_ie_bitmap & 0x02)>>1)==1) {
+          uip_ds6_route_t *route = uip_ds6_route_head();
+          while(route) {
+            const uip_ipaddr_t *hop_addr = uip_ds6_route_nexthop(route);
+            if(!uip_ipaddr_cmp(&route,&hop_addr)) {
+              ies.int_ie_content[int_len]=route->ipaddr.u16[LINKADDR_SIZE-1]>>8;
+              ies.int_ie_content[int_len+1]=hop_addr->u16[LINKADDR_SIZE-1]>>8;
+              int_len += 2; 
+            }
+            route = uip_ds6_route_next(route);
+          }
+          // Insert 0 to indicate routes are finished
+          ies.int_ie_content[int_len] = 0;
+          int_len++;
+        }
+
+        // RPL neigbours
+        if((ies.int_ie_bitmap & 0x01)==1) {
+          rpl_parent_t *pp = rpl_get_preferred_parent(default_instance);
+          rpl_parent_t *nbr = nbr_table_head(rpl_parents);
+          while(nbr != NULL){
+            // Do not include preferred parent, already included
+            if(nbr != pp){
+              const linkaddr_t *nbr_lladdr = rpl_get_parent_lladdr(nbr);
+              ies.int_ie_content[int_len]=nbr_lladdr->u8[LINKADDR_SIZE-1];
+              int_len++;
+            }
+            nbr = nbr_table_next(rpl_parents, nbr);
+          } 
+        }
+#else
+        if((ies.int_ie_bitmap & 0x0F)!=0){
+						LOG_WARN("INT: Cannot add INT due to unsupported INT bitmap %u. Switch to RPL classic.\n",ies.int_ie_bitmap);
+					}
+#endif /* ROUTING_CONF_RPL_CLASSIC */
 
           if((ies.int_ie_bitmap & 0x07)!=0){
-						LOG_WARN("A-K: Cannot add INT due to unsupported INT bitmap %u \n",ies.int_ie_bitmap);
+						LOG_WARN("INT: Cannot add INT due to unsupported INT bitmap %u \n",ies.int_ie_bitmap);
 					}
 
 					// to check if INT will lead to overflow!
@@ -1277,13 +1372,13 @@ send_packet(mac_callback_t sent, void *ptr)
 			}
 			else{
 				 if(packetbuf_datalen()+hdr_len+3+2+2+1+2+2>=PACKETBUF_SIZE){
-						LOG_WARN("A-K: REMOVE INT due to overflow for inline INT\n");
+						LOG_WARN("INT: REMOVE INT due to overflow for inline INT\n");
 						/* remove all INT*/
 						packetbuf_set_attr(PACKETBUF_ATTR_MAC_METADATA, 0);
 						ies.int_ie_content_len=0;
 					}
 					else if(packetbuf_datalen()+hdr_len+ies.int_ie_content_len+2+2+1+2+2>=PACKETBUF_SIZE){
-						LOG_WARN("A-K: REMOVE INT due to overflow for inline INT content\n");
+						LOG_WARN("INT: REMOVE INT due to overflow for inline INT content\n");
 						/* remove INT content but keep header*/
 						ies.int_ie_content_len=3;
 					}
@@ -1291,12 +1386,12 @@ send_packet(mac_callback_t sent, void *ptr)
 						// overflow occurred!!
 						ies.int_ie_mode_flags=ies.int_ie_mode_flags | 0x02;
 						ies.int_ie_content[0]=ies.int_ie_mode_flags;
-						LOG_WARN("A-K: INT overflow \n");
+						LOG_WARN("INT: INT overflow \n");
 					}
 			}
 		}
 		else{	
-			LOG_WARN("A-K: Cannot add INT due to end-to-end telemetry option  or overflow\n");
+			LOG_WARN("INT: Cannot add INT due to end-to-end telemetry option  or overflow\n");
 		}
 	  }
 	  else{	
@@ -1307,15 +1402,22 @@ send_packet(mac_callback_t sent, void *ptr)
 #if INT_STRATEGY_PERIODICAL || INT_STRATEGY_LEAF_PERIODICAL
 		if((int32_t)tsch_current_asn.ls4b-last_int_asn > current_int_period){
 				
-				last_int_asn = (int32_t)tsch_current_asn.ls4b;
+				//last_int_asn = (int32_t)tsch_current_asn.ls4b;
 				int_decision=true;
-				LOG_WARN("A-K: Initiating INT with seqno %u \n",int_sequence_no);
+				LOG_WARN("INT: Initiating INT with seqno %u \n",int_sequence_no);
 		}
 #endif
 
-#if INT_STRATEGY_CONTINUOUS || INT_STRATEGY_LEAF_CONTINUOUS
+#if INT_STRATEGY_DAO
+    if(packetbuf_attr(PACKETBUF_ATTR_DAO_INT) == 1){
+      int_decision=true;
+      LOG_WARN("INT: Initiating DAO INT with seqno %u \n",int_sequence_no);
+    } 
+#endif
+
+#if INT_STRATEGY_LEAF_PERIODICAL
 		int_decision=true;
-		LOG_WARN("A-K: Initiating INT with seqno %u \n",int_sequence_no);
+		LOG_WARN("INT: Initiating INT with seqno %u \n",int_sequence_no);
 #endif
 
 #if INT_STRATEGY_PROBABILISTIC
@@ -1339,10 +1441,10 @@ send_packet(mac_callback_t sent, void *ptr)
 		uint8_t random_num = (random_rand()*random_rand())%100;
 		if(random_num>=(100*remaining_int_entry)/root_distance){
 			int_entry_decision=false;
-			LOG_WARN("A-K: Skip INT with seqno %u with remaining space %u with distance %u\n",int_sequence_no, remaining_int_entry, root_distance);
+			LOG_WARN("INT: Skip INT with seqno %u with remaining space %u with distance %u\n",int_sequence_no, remaining_int_entry, root_distance);
 		} 
 		else{
-			LOG_WARN("A-K: Init INT with seqno %u with remaining space %u with distance %u\n",int_sequence_no, remaining_int_entry, root_distance);
+			LOG_WARN("INT: Init INT with seqno %u with remaining space %u with distance %u\n",int_sequence_no, remaining_int_entry, root_distance);
 		}				
 
 #endif
@@ -1358,17 +1460,18 @@ send_packet(mac_callback_t sent, void *ptr)
 				ies.int_ie_content[2]=ies.int_ie_bitmap;
 				int_len=3;
 			if(int_entry_decision){
+        /* Node linkadress */
 				if(((ies.int_ie_bitmap & 0x80)>>7)==1){
-					ies.int_ie_content[int_len]=linkaddr_node_addr.u8[LINKADDR_SIZE-2];
-					ies.int_ie_content[int_len+1]=linkaddr_node_addr.u8[LINKADDR_SIZE-1];
-					int_len=int_len+2;
+					ies.int_ie_content[int_len]=linkaddr_node_addr.u8[LINKADDR_SIZE-1];
+          int_len=int_len+1;
 				}
+        /* 4bits channel + 12 bits timestamp (last 12 bits of ASN) */
 				if(((ies.int_ie_bitmap & 0x40)>>6)==1){	
-					// 4bits channel + 12 bits timestamp (last 12 bits of ASN)
 					ies.int_ie_content[packetbuf_ielen()+int_len]= (tsch_current_asn.ls4b & 0x00000F00)>>8;
 					ies.int_ie_content[packetbuf_ielen()+int_len+1]=tsch_current_asn.ls4b;
 					int_len=int_len+2;
 				}
+        /* Queue size */
 				if(((ies.int_ie_bitmap & 0x20)>>5)==1){
           struct tsch_neighbor *n = NULL;
           uint8_t queue_size = -1;
@@ -1376,50 +1479,123 @@ send_packet(mac_callback_t sent, void *ptr)
             n = tsch_queue_add_nbr(addr);
             queue_size = (uint8_t) tsch_queue_nbr_packet_count(n);
           }
-          /**/
 					ies.int_ie_content[packetbuf_ielen()+int_len]=(queue_size & 0x0F);
 					int_len++;
 				}
-
-				//RSSI
+				/* RSSI */
 				if(((ies.int_ie_bitmap & 0x10)>>4)==1){
 					ies.int_ie_content[packetbuf_ielen()+int_len]=0;
 					int_len++;
 				}
-
-        //Neighbours
-        if(((ies.int_ie_bitmap & 0x08)>>3)==1){
-					rpl_nbr_t *nbr = nbr_table_head(rpl_neighbors);
-          while(nbr != NULL) {
-            const linkaddr_t *nbr_lladdr = rpl_neighbor_get_lladdr(nbr);
-            ies.int_ie_content[int_len]=nbr_lladdr->u8[LINKADDR_SIZE-1];
-            int_len++;
-            nbr = nbr_table_next(rpl_neighbors, nbr);
+#if ROUTING_CONF_RPL_CLASSIC
+        /* ASN of TX, last DAO, DIO & EB */
+        if(((ies.int_ie_bitmap & 0x08)>>3)==1) {
+          struct tsch_asn_t temp;
+          /* Get current ASN */
+          ies.int_ie_content[int_len]= (tsch_current_asn.ls4b)>>8;
+					ies.int_ie_content[int_len+1]=tsch_current_asn.ls4b;
+          LOG_WARN("INT: Writing current ASN: %u %lu\n", tsch_current_asn.ms1b, tsch_current_asn.ls4b);
+					int_len += 2;
+          /* Get difference of last DAO ASN */
+          temp = tsch_current_asn;
+          TSCH_ASN_DEC_ASN(temp,last_dao_asn);
+          ies.int_ie_content[int_len]= (temp.ls4b)>>16;
+          ies.int_ie_content[int_len+1]= (temp.ls4b)>>8;
+					ies.int_ie_content[int_len+2]=temp.ls4b;
+          LOG_WARN("INT: Writing DAO ASN: %u %lu\n", last_dao_asn.ms1b, last_dao_asn.ls4b);
+					int_len += 3;
+          /* Get difference of last DIO ASN */
+          temp = tsch_current_asn;
+          TSCH_ASN_DEC_ASN(temp,last_dio_asn);
+          ies.int_ie_content[int_len]= (temp.ls4b)>>16;
+          ies.int_ie_content[int_len+1]= (temp.ls4b)>>8;
+					ies.int_ie_content[int_len+2]=temp.ls4b;
+          LOG_WARN("INT: Writing DIO ASN: %u %lu\n", last_dio_asn.ms1b, last_dio_asn.ls4b);
+          int_len += 3;
+          /* Get ASN of last EB generation */
+          temp = tsch_current_asn;
+          TSCH_ASN_DEC_ASN(temp,last_eb_gen_asn);
+          ies.int_ie_content[int_len]= (temp.ls4b)>>8;
+					ies.int_ie_content[int_len+1]=temp.ls4b;
+          LOG_WARN("INT: Writing EB generation ASN: %u %lu\n", last_eb_gen_asn.ms1b, last_eb_gen_asn.ls4b);
+          int_len += 2;
+          /* Get ASN of last EB transmission */
+          temp = tsch_current_asn;
+          TSCH_ASN_DEC_ASN(temp,last_eb_tx_asn);
+          ies.int_ie_content[int_len]= (temp.ls4b)>>8;
+					ies.int_ie_content[int_len+1]=temp.ls4b;
+          LOG_WARN("INT: Writing EB transmission ASN: %u %lu\n", last_eb_tx_asn.ms1b, last_eb_tx_asn.ls4b);
+          int_len += 2;
+        }
+        /* RPL preferred parent */
+        if(((ies.int_ie_bitmap & 0x04)>>2)==1) {
+          // Get preferred parent
+          rpl_parent_t *pp = rpl_get_preferred_parent(default_instance);
+          if(pp != NULL){
+            const linkaddr_t *pp_lladdr = rpl_get_parent_lladdr(pp);
+            ies.int_ie_content[int_len]=pp_lladdr->u8[LINKADDR_SIZE-1];
+          } else {
+            ies.int_ie_content[int_len]=0;
           }
-				}
-
-        if((ies.int_ie_bitmap & 0x07)!=0){
-						LOG_WARN("A-K: Cannot add INT due to unsupported INT bitmap %u \n",ies.int_ie_bitmap);
-				}
-			}
+          int_len++;
+        }
+        /* Routes */
+        if(((ies.int_ie_bitmap & 0x02)>>1)==1) {
+          uip_ds6_route_t *route = uip_ds6_route_head();
+          while(route) {
+            const uip_ipaddr_t *hop_addr = uip_ds6_route_nexthop(route);
+            if(!uip_ipaddr_cmp(&route,&hop_addr)) {
+              ies.int_ie_content[int_len]=route->ipaddr.u16[LINKADDR_SIZE-1]>>8;
+              ies.int_ie_content[int_len+1]=hop_addr->u16[LINKADDR_SIZE-1]>>8;
+              int_len += 2; 
+            }
+            route = uip_ds6_route_next(route);
+          }
+          // Insert 0 to indicate routes are finished
+          ies.int_ie_content[int_len] = 0;
+          int_len++;
+        }
+        /* RPL neigbours */
+        if((ies.int_ie_bitmap & 0x01)==1) {
+          rpl_parent_t *pp = rpl_get_preferred_parent(default_instance);
+          rpl_parent_t *nbr = nbr_table_head(rpl_parents);
+          while(nbr != NULL){
+            // Do not include preferred parent, already included
+            if(nbr != pp){
+              const linkaddr_t *nbr_lladdr = rpl_get_parent_lladdr(nbr);
+              ies.int_ie_content[int_len]=nbr_lladdr->u8[LINKADDR_SIZE-1];
+              int_len++;
+            }
+            nbr = nbr_table_next(rpl_parents, nbr);
+          } 
+        }
+#else
+        if((ies.int_ie_bitmap & 0x0F)!=0){
+						LOG_WARN("INT: Cannot add INT due to unsupported INT bitmap %u. Switch to RPL classic.\n",ies.int_ie_bitmap);
+					}
+#endif /* ROUTING_CONF_RPL_CLASSIC */
+        }
 				// to check if INT will fit in
 				if(packetbuf_datalen()+hdr_len+int_len+2+2+1+2+2+1<PACKETBUF_SIZE){
 					ies.int_ie_content_len = int_len;
 					int_sequence_no=int_sequence_no+1;
+#if INT_STRATEGY_PERIODICAL || INT_STRATEGY_LEAF_PERIODICAL
+          last_int_asn = (int32_t)tsch_current_asn.ls4b;
+#endif
 				}
 				else{
 					/* specify with PACKETBUF_ATTR_METADATA that packetbuf does not have IEs */
 					packetbuf_set_attr(PACKETBUF_ATTR_MAC_METADATA, 0);
-					LOG_WARN("A-K: NOT ADDING IE: %u %u\n",ies.int_ie_content_len,packetbuf_datalen()+int_len+2+2+1+2+2+1);
+					LOG_WARN("INT: NOT ADDING IE: %u %u\n",int_len,packetbuf_datalen()+hdr_len+int_len+2+2+1+2+2+1);
 				}
 			}
 			else{
 					/* specify with PACKETBUF_ATTR_METADATA that packetbuf does not have IEs */
 					packetbuf_set_attr(PACKETBUF_ATTR_MAC_METADATA, 0);
-					LOG_WARN("A-K: Not Adding IE due to INT Strategy\n");
+					//LOG_WARN("INT: Not Adding IE due to INT Strategy\n");
 			}
 		}
-#if INT_STRATEGY_LEAF_PERIODICAL
+#if INT_STRATEGY_LEAF_PERIODICAL || INT_STRATEGY_DAO
   }
 #endif
    }
@@ -1435,7 +1611,7 @@ send_packet(mac_callback_t sent, void *ptr)
 		  /* prepend Termination 1 IE to the header field; 2 octets */
 		  if(packetbuf_hdrallocfromend(2) &&
 		     frame80215e_create_ie_header_list_termination_1((uint8_t *)packetbuf_dataptr()-2, 2, &ies) < 0) {
-		    LOG_ERR("A-K: send_packet() fails because of Header Termination 1 IE\n");
+		    LOG_ERR("INT: send_packet() fails because of Header Termination 1 IE\n");
 		    ret = MAC_TX_ERR;
 		    mac_call_sent_callback(sent, ptr, ret, 1);
 		    return;
@@ -1443,7 +1619,7 @@ send_packet(mac_callback_t sent, void *ptr)
 
 		  if(packetbuf_hdrallocfromend(2) != 1 
 			|| frame80215e_create_ie_ietf((uint8_t *)packetbuf_dataptr()-2, ies.int_ie_content_len+1, &ies) < 0){
-		    LOG_ERR("A-K: send_packet() fails because of IETF IE Header\n");
+		    LOG_ERR("INT: send_packet() fails because of IETF IE Header\n");
 		    ret = MAC_TX_ERR;
 		    mac_call_sent_callback(sent, ptr, ret, 1);
 		    return;
@@ -1452,7 +1628,7 @@ send_packet(mac_callback_t sent, void *ptr)
 	  	  if(packetbuf_hdrallocfromend(1+ies.int_ie_content_len+2) != 1 
 			|| frame80215e_create_ie_int_content((uint8_t *)packetbuf_dataptr()-(ies.int_ie_content_len+2+1), ies.int_ie_content_len, &ies) < 0
 			|| frame80215e_create_ie_payload_list_termination((uint8_t *)packetbuf_dataptr()-2, 2, &ies) < 0){
-		    LOG_ERR("A-K: send_packet() fails because of INT IE Header and Content\n");
+		    LOG_ERR("INT: send_packet() fails because of INT IE Header and Content\n");
 		    ret = MAC_TX_ERR;
 		    mac_call_sent_callback(sent, ptr, ret, 1);
 		    return;
@@ -1546,33 +1722,101 @@ packet_input(void)
      	}
 #endif /* TSCH_WITH_SIXTOP */
 #if TSCH_WITH_INT
-    LOG_INFO("A-K: checking int length [%u]\n",ies.int_ie_content_len);
+    LOG_INFO("INT: checking int length [%u]\n",ies.int_ie_content_len);
 	if(ies.int_ie_content_len > 0) {
 			packetbuf_ie_clear();
-	        packetbuf_set_attr(PACKETBUF_ATTR_INT, 1);
+	    packetbuf_set_attr(PACKETBUF_ATTR_INT, 1);
 			packetbuf_ie_copyfrom(ies.int_ie_content, ies.int_ie_content_len);
 			
 			if(NETSTACK_ROUTING.node_is_root()==1){
 				frame80215e_retrieve_ie_int_header(&ies);
-				//LOG_WARN("A-K: RECEIVED INT from node [%u] seqno: %u len: %u \n", ies.int_ie_content[4], ies.int_ie_seq_no, ies.int_ie_content_len);
-				//LOG_WARN("A-K: INT DATA: len: %u ASN: %u %lu ch: %u rssi: %d neighbours: ", ies.int_ie_content_len,tsch_current_asn.ms1b,tsch_current_asn.ls4b,packetbuf_attr(PACKETBUF_ATTR_CHANNEL),(signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI));
-        LOG_WARN("INT: RECEIVED INT from node %u:\n", ies.int_ie_content[4]);
-				/**/
-        int i = 5;
-        while(i < ies.int_ie_content_len) {
-          LOG_WARN("INT: %u neighbour of %u\n", ies.int_ie_content[i], ies.int_ie_content[4]);
+        int i = 3;
+        if(((ies.int_ie_bitmap & 0x80)>>7)==1) {
+          LOG_WARN("INT: RECEIVED INT from node [%u]: seqno: %u len %u\n", ies.int_ie_content[i], ies.int_ie_seq_no, ies.int_ie_content_len);
+          i += 1;
+        }
+        if(((ies.int_ie_bitmap & 0x70)>>7)==0x70) {
+          LOG_WARN("INT: INT DATA: len: %u ASN: %u %lu ch: %u rssi: %d neighbours: ", ies.int_ie_content_len,tsch_current_asn.ms1b,tsch_current_asn.ls4b,packetbuf_attr(PACKETBUF_ATTR_CHANNEL),(signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI));
+          i += 4;        
+        }
+
+#if ROUTING_CONF_RPL_CLASSIC
+        /* ASN of TX, last DAO, DIO & EB */
+        if(((ies.int_ie_bitmap & 0x08)>>3)==1) {
+          struct tsch_asn_t tx_asn;
+          struct tsch_asn_t diff;
+          struct tsch_asn_t res;
+          /* Get ASN of transmission */
+          if(i+1 < ies.int_ie_content_len) {
+            tx_asn.ls4b = (tsch_current_asn.ls4b & 0xFFFF0000) + ((ies.int_ie_content[i]<<8) + ies.int_ie_content[i+1]);
+            tx_asn.ms1b = tsch_current_asn.ms1b;
+            LOG_WARN("INT: TX at ASN %u %lu\n", tx_asn.ms1b, tx_asn.ls4b);
+          }
+          i += 2;
+          /* Get ASN of last DAO transmission */
+          if(i+2 < ies.int_ie_content_len) {
+            diff.ls4b = ((ies.int_ie_content[i]<<16) + (ies.int_ie_content[i+1]<<8) + ies.int_ie_content[i+2]);
+            diff.ms1b = 0;
+            res = tx_asn;
+            TSCH_ASN_DEC_ASN(res,diff);
+            LOG_WARN("INT: last DAO at ASN %u %lu\n", res.ms1b, res.ls4b);
+          }
+          i += 3;
+          /* Get ASN of last DIO transmission */
+          if(i+2 < ies.int_ie_content_len) {
+            diff.ls4b = ((ies.int_ie_content[i]<<16) + (ies.int_ie_content[i+1]<<8) + ies.int_ie_content[i+2]);
+            diff.ms1b = 0;
+            res = tx_asn;
+            TSCH_ASN_DEC_ASN(res,diff);
+            LOG_WARN("INT: last DIO at ASN %u %lu\n", res.ms1b, res.ls4b);
+          }
+          i += 3;
+          /* Get ASN of last EB generation */
+          if(i+1 < ies.int_ie_content_len) {
+            diff.ls4b = ((ies.int_ie_content[i]<<8) + ies.int_ie_content[i+1]);
+            diff.ms1b = 0;
+            res = tx_asn;
+            TSCH_ASN_DEC_ASN(res,diff);
+            LOG_WARN("INT: last EB generation at ASN %u %lu\n", res.ms1b, res.ls4b);
+          }
+          i += 2;
+          /* Get ASN of last EB transmission */
+          if(i+1 < ies.int_ie_content_len) {
+            diff.ls4b = ((ies.int_ie_content[i]<<8) + ies.int_ie_content[i+1]);
+            diff.ms1b = 0;
+            res = tx_asn;
+            TSCH_ASN_DEC_ASN(res,diff);
+            LOG_WARN("INT: last EB transmission at ASN %u %lu\n", res.ms1b, res.ls4b);
+          }
+          i += 2;
+        }
+        /* RPL preferred parent */
+        if(((ies.int_ie_bitmap & 0x04)>>2)==1) {
+          if(i < ies.int_ie_content_len && ies.int_ie_content[i] != 0) {
+            LOG_WARN("INT: %u preferred parent of %u\n", ies.int_ie_content[i], ies.int_ie_content[4]);
+          } else {
+            LOG_WARN("INT: %u has no preferred parent\n", ies.int_ie_content[4]);
+          }
           i++;
         }
-				
-				//temporary
-				//for(int i = 2; i < ies.int_ie_content_len; i++) {
-					//	if((ies.int_ie_content[i]& 0x0F)>8){
-					//		LOG_WARN_("Queue %02x\n", ies.int_ie_content[i]& 0x0F);
-					//		tsch_queue_alarm=1;
-					//	}
-				//}
-			}    	
-			
+        /* Routes */
+        if(((ies.int_ie_bitmap & 0x02)>>1)==1) {
+          while(i < ies.int_ie_content_len && ies.int_ie_content[i] != 0) {
+            LOG_WARN("INT: %u via %u via %u\n", ies.int_ie_content[i], ies.int_ie_content[i+1], ies.int_ie_content[4]);
+            i += 2;
+          }
+          i++;
+        }
+        /* RPL neigbours */
+        if((ies.int_ie_bitmap & 0x01)==1) {
+          while(i < ies.int_ie_content_len) {
+            LOG_WARN("INT: %u neighbour of %u\n", ies.int_ie_content[i], ies.int_ie_content[4]);
+            i++;
+          } 
+        }
+
+#endif /* ROUTING_CONF_RPL_CLASSIC */
+			}
     }
 #endif /* TSCH_WITH_INT */
 
