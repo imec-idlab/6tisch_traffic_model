@@ -8,8 +8,11 @@ PLATFORMS_EXCLUDE = sky z1
 MAKE_MAC = MAKE_MAC_TSCH
 
 # Configure with RPL: Lite for non-storing and Classic for storing
-#MAKE_ROUTING = MAKE_ROUTING_RPL_CLASSIC
-MAKE_ROUTING = MAKE_ROUTING_RPL_LITE
+MAKE_ROUTING = MAKE_ROUTING_RPL_CLASSIC
+#MAKE_ROUTING = MAKE_ROUTING_RPL_LITE
+
+# Configure with Orchestra
+MODULES += os/services/orchestra
 
 CONTIKI=../../../..
 
