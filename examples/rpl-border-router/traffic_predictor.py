@@ -328,8 +328,8 @@ def get_p2p_coap_bytes(sender, receiver, rq_payload, rp_payload, mac_hdr, tot_hd
 def get_daos(nodes, est_time, dao_period):
     daos = []
     for n in nodes:
-        if((n.lastdao != None) and (n.toptime != None)):
-            final = n.toptime/1000 + est_time
+        if((n.lastdao != None) and (n.updtime != None)):
+            final = n.updtime/1000 + est_time
             dao = int(np.floor((final-n.lastdao/1000)/dao_period))
         else:
             dao = int(np.floor(est_time/dao_period))
@@ -405,10 +405,10 @@ with open('predictions.csv', 'w', newline='') as csvfile:
             if(nodes.nodes[i].id != ROOT):
                 for j in range(0,daos[i]):
                     get_multihop_dao_bytes(nodes.nodes[i],L_DAO,L_DAO_ACK)  
-        if(nodes.nodes[-1].toptime != None): 
+        if(nodes.nodes[-1].updtime != None): 
             for n in nodes.nodes:
                 n.print_n()
-                predwriter.writerow([n.toptime ,n.id, n.ebtx, n.eacktx, n.diotx, n.daotx, n.dao_acktx, n.coaptx])
+                predwriter.writerow([n.updtime ,n.id, n.ebtx, n.eacktx, n.diotx, n.daotx, n.dao_acktx, n.coaptx])
             predwriter.writerow([0,0,0,0,0,0,0,0])
         # with open('predictions.csv', 'w', newline='') as csvfile:
         #     predwriter = csv.writer(csvfile, delimiter=' ', quotechar='|', quoting=csv.QUOTE_MINIMAL)

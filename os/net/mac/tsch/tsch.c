@@ -1751,7 +1751,7 @@ packet_input(void)
 				frame80215e_retrieve_ie_int_header(&ies);
         int i = 3;
         if(((ies.int_ie_bitmap & 0x80)>>7)==1) {
-          LOG_WARN("INT: RECEIVED INT from node [%u]: seqno: %u len %u\n", ies.int_ie_content[i], ies.int_ie_seq_no, ies.int_ie_content_len);
+          LOG_WARN("INT: RECEIVED INT from node %u: seqno: %u len %u ASN %u %lu\n", ies.int_ie_content[i], ies.int_ie_seq_no, ies.int_ie_content_len, tsch_current_asn.ms1b, tsch_current_asn.ls4b);
           i += 1;
         }
         if(((ies.int_ie_bitmap & 0x70)>>7)==0x70) {
@@ -1770,7 +1770,7 @@ packet_input(void)
             tx_asn.ls4b = (tsch_current_asn.ls4b & 0xFFFF0000) + ((ies.int_ie_content[i]<<8) + ies.int_ie_content[i+1]);
             tx_asn.ms1b = tsch_current_asn.ms1b;
 #if INT_STRATEGY_DAO
-            LOG_WARN("INT: last DAO at ASN %u %lu\n", tx_asn.ms1b, tx_asn.ls4b);
+            LOG_WARN("INT: last DAO at ASN %u %lu current ASN %u %lu\n", tx_asn.ms1b, tx_asn.ls4b, tsch_current_asn.msb1, tsch_current_asn.ls4b);
 #else
             LOG_WARN("INT: TX at ASN %u %lu\n", tx_asn.ms1b, tx_asn.ls4b);
 #endif /* INT_STRATEGY_DAO */
