@@ -71,7 +71,7 @@
 /******************************************************/
 
 /* Choose MOP */
-#define RPL_STORING 1
+#define RPL_STORING 0
 #if RPL_STORING
 #define RPL_CONF_MOP RPL_MOP_STORING_MULTICAST
 #else
@@ -97,7 +97,7 @@
 #else
 #define INT_STRATEGY_LEAF_PERIODICAL 1
 #define INT_PERIOD 200
-#define INT_BITMAP 0x88
+#define INT_BITMAP 0x89
 #endif
 
 /*******************************************************/

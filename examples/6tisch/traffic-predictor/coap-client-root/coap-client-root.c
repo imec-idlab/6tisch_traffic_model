@@ -48,6 +48,8 @@
 #include "random.h"
 #include "net/netstack.h"
 
+#include "rpl-dag-root.h"
+
 /* Log configuration */
 #include "coap-log.h"
 #define LOG_MODULE "App"
@@ -123,6 +125,8 @@ PROCESS_THREAD(coap_client, ev, data)
       } else {
         LOG_INFO("Not reachable yet\n");
       }
+
+      rpl_dag_root_print_links("");
 
       /* Add some jitter */
       etimer_set(&et, SEND_INTERVAL

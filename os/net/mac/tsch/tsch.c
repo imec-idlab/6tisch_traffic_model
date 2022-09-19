@@ -1783,7 +1783,7 @@ packet_input(void)
             diff.ms1b = 0;
             res = tx_asn;
             TSCH_ASN_DEC_ASN(res,diff);
-            LOG_WARN("INT: last DAO at ASN %u %lu\n", res.ms1b, res.ls4b);
+            LOG_WARN("INT: last DAO of %u at ASN %u %lu\n", ies.int_ie_content[3], res.ms1b, res.ls4b);
           }
           i += 3;
 #endif /* (!INT_STRATEGY_DAO) */
@@ -1793,7 +1793,7 @@ packet_input(void)
             diff.ms1b = 0;
             res = tx_asn;
             TSCH_ASN_DEC_ASN(res,diff);
-            LOG_WARN("INT: last DIO at ASN %u %lu\n", res.ms1b, res.ls4b);
+            LOG_WARN("INT: last DIO of %u at ASN %u %lu\n", ies.int_ie_content[3], res.ms1b, res.ls4b);
           }
           i += 3;
           /* Get ASN of last EB generation */
@@ -1802,7 +1802,7 @@ packet_input(void)
             diff.ms1b = 0;
             res = tx_asn;
             TSCH_ASN_DEC_ASN(res,diff);
-            LOG_WARN("INT: last EB generation at ASN %u %lu\n", res.ms1b, res.ls4b);
+            LOG_WARN("INT: last EB generation of %u at ASN %u %lu\n", ies.int_ie_content[3], res.ms1b, res.ls4b);
           }
           i += 2;
           /* Get ASN of last EB transmission */
@@ -1811,7 +1811,7 @@ packet_input(void)
             diff.ms1b = 0;
             res = tx_asn;
             TSCH_ASN_DEC_ASN(res,diff);
-            LOG_WARN("INT: last EB transmission at ASN %u %lu\n", res.ms1b, res.ls4b);
+            LOG_WARN("INT: last EB transmission of %u at ASN %u %lu\n", ies.int_ie_content[3], res.ms1b, res.ls4b);
           }
           i += 2;
         }
