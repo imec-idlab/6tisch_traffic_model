@@ -6,17 +6,20 @@ import numpy as np
 
 class node:
     def __init__(self, id):
-        self.id = id        # Node ID
-        self.n = 0          # Number of neighbours
-        self.ns = []        # Neighbours
-        self.pn = None      # Preferred parent
-        self.coaptx = 0     # Amount of TX bytes due to CoAP traffic
-        self.ebtx = 0       # Amound of TX bytes due to EB traffic
-        self.diotx = 0      # Amount of TX bytes due to DIO traffic
-        self.daotx = 0      # Amount of TX bytes due to DAO traffic
-        self.dao_acktx = 0  # Amount of TX bytes due to DAO ACK traffic
-        self.eacktx = 0     # Amount of TX bytes due to EACK traffic
-        self.lastdao = None
+        self.id = id            # Node ID
+        self.n = 0              # Number of neighbours
+        self.ns = []            # Neighbours
+        self.pn = None          # Preferred parent
+        self.coaptx = 0         # Amount of TX bytes due to CoAP traffic
+        self.ebtx = 0           # Amound of TX bytes due to EB traffic
+        self.diotx = 0          # Amount of TX bytes due to DIO traffic
+        self.daotx = 0          # Amount of TX bytes due to DAO traffic
+        self.dao_acktx = 0      # Amount of TX bytes due to DAO ACK traffic
+        self.eacktx = 0         # Amount of TX bytes due to EACK traffic
+        self.lastdao = None     # ASN of last DAO transmission
+        self.lastdio = None     # ASN of last DIO transmission
+        self.lastebgen = None   # ASN of last EB generation
+        self.lastebtx = None    # ASN of last EB transmission
         self.toptime = None
         self.coaptimes = []
         self.coaplengths = []
@@ -80,9 +83,14 @@ class node:
         print("Neighbours: " + string)
         if(self.pn != None):
             print("Preferred parent: " + str(self.pn.id))
-
         if(self.lastdao != None):
-            print("Last DAO time: " + str(self.lastdao))
+            print("Last DAO ASN: " + str(self.lastdao))
+        if(self.lastdio != None):
+            print("Last DIO ASN: " + str(self.lastdio))
+        if(self.lastebgen != None):
+            print("Last EB gen ASN: " + str(self.lastebgen))
+        if(self.lastebtx != None):
+            print("Last EB TX ASN: " + str(self.lastebtx))
         if(self.toptime != None):
             print("Current time: " + str(self.toptime))
         print("COAP requests: " + str(len(self.coaptimes)))
@@ -111,6 +119,10 @@ def hex2dec(hex):
 REGEXP_ADDR = re.compile('^.*?INFO:\sRPL\s\s\s\s\s\s\s]\slinks:\sfd00::2(?P<node>([0-9a-f]+))')
 REGEXP_PARENT = re.compile('^.*?INFO:\sRPL\s\s\s\s\s\s\s]\slinks:\sfd00::2[0-9a-f]+:[0-9a-f]+:[0-9a-f]+:[0-9a-f]+\s\sto\sfd00::2(?P<parent>([0-9a-f]+)):[0-9a-f]+:[0-9a-f]+:[0-9a-f]+\stime:\s(?P<topology_time>([0-9]+))')
 REGEXP_NB = re.compile('^.*?WARN:\sTSCH\s\s\s\s\s\s]\sINT:\s(?P<neighbour>([0-9a-f]+))\sneighbour\sof\s(?P<node>([0-9a-f]+))')
+REGEXP_DAOTX = re.compile('^.*?WARN:\sTSCH\s\s\s\s\s\s]\sINT:\slast\sDAO\sof\s(?P<node>([0-9a-f]+))\sat\sASN\s(?P<dao_asn_ms1b>([0-9]+))\s(?P<dao_asn_ls4b>([0-9]+))')
+REGEXP_DIOTX = re.compile('^.*?WARN:\sTSCH\s\s\s\s\s\s]\sINT:\slast\sDIO\sof\s(?P<node>([0-9a-f]+))\sat\sASN\s(?P<dio_asn_ms1b>([0-9]+))\s(?P<dio_asn_ls4b>([0-9]+))')
+REGEXP_EBGEN = re.compile('^.*?WARN:\sTSCH\s\s\s\s\s\s]\sINT:\slast\sEB\sgeneration\sof\s(?P<node>([0-9a-f]+))\sat\sASN\s(?P<ebgen_asn_ms1b>([0-9]+))\s(?P<ebgen_asn_ls4b>([0-9]+))')
+REGEXP_EBTX = re.compile('^.*?WARN:\sTSCH\s\s\s\s\s\s]\sINT:\slast\sEB\stransmission\sof\s(?P<node>([0-9a-f]+))\sat\sASN\s(?P<ebtx_asn_ms1b>([0-9]+))\s(?P<ebtx_asn_ls4b>([0-9]+))')
 REGEXP_DAO = re.compile('^.*?INFO:\sRPL\s\s\s\s\s\s\s]\sreceived\sa\sDAO\sfrom\sfd00::2(?P<dao_origin>([0-9a-f]+)):[0-9a-f]+:[0-9a-f]+:[0-9a-f]+,\stime:\s(?P<dao_time>([0-9]+))')
 REGEXP_COAP = re.compile('^.*?INFO:\scoap-uip\s\s]\sreceiving\sUDP\sdatagram\sfrom\s\[fd00::2(?P<coap_origin>([0-9a-f]+)):[0-9a-f]+:[0-9a-f]+:[0-9a-f]+\]:[0-9]+\stime:\s(?P<coap_time>([0-9]+))\sms,\sLength:\s(?P<coap_length>([0-9]+))')
 REGEXP_COAPRESP = re.compile('^.*?INFO:\scoap-uip\s\s]\ssent\sto\scoap://\[fd00::2(?P<coap_respdest>([0-9a-f]+)):[0-9a-f]+:[0-9a-f]+:[0-9a-f]+\]:[0-9]+\s(?P<coap_resplength>([0-9]+))\sbytes,\stime:\s(?P<coap_resptime>([0-9]+))\sms')
@@ -159,14 +171,42 @@ def update_topology():
                 neighbour_place = search_node(nodes.nodes,nb)
                 if(neighbour_place != -1):
                     nodes.nodes[node_place].add_neighbour(nodes.nodes[neighbour_place])
-        matchdao = re.match(REGEXP_DAO, chomped_line)
-        if(matchdao):
-            dao_o = matchdao.group("dao_origin")
-            dao_o = hex2dec(dao_o)
-            dao_t = float(matchdao.group("dao_time"))
-            node_place = search_node(nodes.nodes,dao_o)
+        matchdaotx = re.match(REGEXP_DAOTX, chomped_line)
+        if(matchdaotx):
+            n = matchdaotx.group("node")
+            n = hex2dec(n)
+            dao_asn_ms1b = (int)(matchdaotx.group("dao_asn_ms1b"))
+            dao_asn_ls4b = (int)(matchdaotx.group("dao_asn_ls4b"))
+            node_place = search_node(nodes.nodes,n)
             if(node_place != -1):
-                nodes.nodes[node_place].update_dao_time(dao_t)
+                nodes.nodes[node_place].lastdao = (dao_asn_ls4b+dao_asn_ms1b*pow(2,32))
+        matchdiotx = re.match(REGEXP_DIOTX, chomped_line)
+        if(matchdiotx):
+            n = matchdiotx.group("node")
+            n = hex2dec(n)
+            dio_asn_ms1b = (int)(matchdiotx.group("dio_asn_ms1b"))
+            dio_asn_ls4b = (int)(matchdiotx.group("dio_asn_ls4b"))
+            node_place = search_node(nodes.nodes,n)
+            if(node_place != -1):
+                nodes.nodes[node_place].lastdio = (dio_asn_ls4b+dio_asn_ms1b*pow(2,32))
+        matchebgen = re.match(REGEXP_EBGEN, chomped_line)
+        if(matchebgen):
+            n = matchebgen.group("node")
+            n = hex2dec(n)
+            ebgen_asn_ms1b = (int)(matchebgen.group("ebgen_asn_ms1b"))
+            ebgen_asn_ls4b = (int)(matchebgen.group("ebgen_asn_ls4b"))
+            node_place = search_node(nodes.nodes,n)
+            if(node_place != -1):
+                nodes.nodes[node_place].lastebgen = (ebgen_asn_ls4b+ebgen_asn_ms1b*pow(2,32))
+        matchebtx = re.match(REGEXP_EBTX, chomped_line)
+        if(matchebtx):
+            n = matchebtx.group("node")
+            n = hex2dec(n)
+            ebtx_asn_ms1b = (int)(matchebtx.group("ebtx_asn_ms1b"))
+            ebtx_asn_ls4b = (int)(matchebtx.group("ebtx_asn_ls4b"))
+            node_place = search_node(nodes.nodes,n)
+            if(node_place != -1):
+                nodes.nodes[node_place].lastebtx = (ebtx_asn_ls4b+ebtx_asn_ms1b*pow(2,32))
         matchcoap = re.match(REGEXP_COAP, chomped_line)
         if(matchcoap):
             coap_o = matchcoap.group("coap_origin")
