@@ -60,11 +60,13 @@
 #define SERVER_EP "coap://[fd00::208:8:8:8]"
 
 #define SEND_INTERVAL		  (60 * CLOCK_SECOND)
+#define PRED_INTERVAL     (33 * CLOCK_SECOND)
 
 PROCESS(coap_client, "CoAP Client");
 AUTOSTART_PROCESSES(&coap_client);
 
 static struct etimer et;
+static struct etimer et2;
 
 /* Example URIs that can be queried. */
 #define NUMBER_OF_URLS 5
@@ -101,6 +103,7 @@ PROCESS_THREAD(coap_client, ev, data)
   coap_endpoint_parse(SERVER_EP, strlen(SERVER_EP), &server_ep);
 
   etimer_set(&et, random_rand() % SEND_INTERVAL);
+  etimer_set(&et2, PRED_INTERVAL);
 
   while(1) {
     PROCESS_YIELD();
@@ -131,6 +134,10 @@ PROCESS_THREAD(coap_client, ev, data)
       /* Add some jitter */
       etimer_set(&et, SEND_INTERVAL
         - CLOCK_SECOND + (random_rand() % (2 * CLOCK_SECOND)));
+    }
+    if(etimer_expired(&et2)) {
+      LOG_INFO("PREDICT %lu ms\n", clock_time());
+      etimer_reset(&et2);
     }
   }
 

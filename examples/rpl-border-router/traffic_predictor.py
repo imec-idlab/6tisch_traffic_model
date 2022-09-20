@@ -32,7 +32,7 @@ L_TOT_HDR       = 49        # Fixed header size
 # CoAP
 COAP_PERIOD     = 60        # 1 minute
 L_COAP_RQ       = 16        # CoAP request payload
-L_COAP_RP       = 64        # CoAP response payload
+L_COAP_RP       = 30        # CoAP response payload
 
 # EACK
 L_EACK          = 19        # EACK length
@@ -405,16 +405,10 @@ with open('predictions.csv', 'w', newline='') as csvfile:
             if(nodes.nodes[i].id != ROOT):
                 for j in range(0,daos[i]):
                     get_multihop_dao_bytes(nodes.nodes[i],L_DAO,L_DAO_ACK)  
-        if(nodes.nodes[-1].updtime != None): 
-            for n in nodes.nodes:
-                n.print_n()
-                predwriter.writerow([n.updtime ,n.id, n.ebtx, n.eacktx, n.diotx, n.daotx, n.dao_acktx, n.coaptx])
-            predwriter.writerow([0,0,0,0,0,0,0,0])
-        # with open('predictions.csv', 'w', newline='') as csvfile:
-        #     predwriter = csv.writer(csvfile, delimiter=' ', quotechar='|', quoting=csv.QUOTE_MINIMAL)
-        #     predwriter.writerow(['Node ID', 'EB TX', 'EACK TX', 'DIO TX', 'DAO TX', 'DAO ACK TX', 'CoAP TX'])
-        #     for n in nodes.nodes:
-        #             predwriter.writerow([n.id, n.ebtx, n.eacktx, n.diotx, n.daotx, n.dao_acktx, n.coaptx])
+        for n in nodes.nodes:
+            n.print_n()
+            predwriter.writerow([n.updtime ,n.id, n.ebtx, n.eacktx, n.diotx, n.daotx, n.dao_acktx, n.coaptx])
+        predwriter.writerow([0,0,0,0,0,0,0,0])
 
 
 ### TEST SCRIPT ###

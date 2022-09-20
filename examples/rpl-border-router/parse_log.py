@@ -21,7 +21,8 @@ class node:
         self.lastdio = None     # Node time of last DIO transmission
         self.lastebgen = None   # Node time of last EB generation
         self.lastebtx = None    # Node time of last EB transmission
-        self.updtime = None     # Node time of last node update
+        self.updtime = None     # Node time of last INT update
+        self.predtime = None    # Time of prediction
         self.coaptimes = []
         self.coaplengths = []
         self.coapresptimes = []
@@ -93,7 +94,9 @@ class node:
         if(self.lastebtx != None):
             print("Last EB TX at: " + str(self.lastebtx) + " ms")
         if(self.updtime != None):
-            print("Last root time: " + str(self.updtime) + " ms")
+            print("Last update at: " + str(self.updtime) + " ms")
+        if(self.predtime != None):
+            print("Prediction at: " + str(self.predtime) + " ms")
         print("COAP requests: " + str(len(self.coaptimes)))
         print("COAP responses: " + str(len(self.coapresptimes)))
         print("1 hour prediction: ")
@@ -117,6 +120,7 @@ def hex2dec(hex):
     dec = int(temp,16)
     return dec
 
+REGEXP_PRED = re.compile('^.*?INFO:\sApp\s\s\s\s\s\s\s]\sPREDICT\s(?P<time>([0-9]+))')
 REGEXP_ADDR = re.compile('^.*?INFO:\sRPL\s\s\s\s\s\s\s]\slinks:\sfd00::2(?P<node>([0-9a-f]+))')
 REGEXP_PARENT = re.compile('^.*?INFO:\sRPL\s\s\s\s\s\s\s]\slinks:\sfd00::2[0-9a-f]+:[0-9a-f]+:[0-9a-f]+:[0-9a-f]+\s\sto\sfd00::2(?P<parent>([0-9a-f]+)):[0-9a-f]+:[0-9a-f]+:[0-9a-f]+\stime:\s(?P<topology_time>([0-9]+))')
 REGEXP_NB = re.compile('^.*?WARN:\sTSCH\s\s\s\s\s\s]\sINT:\s(?P<neighbour>([0-9a-f]+))\sneighbour\sof\s(?P<node>([0-9a-f]+))')
@@ -129,7 +133,6 @@ REGEXP_DAO = re.compile('^.*?INFO:\sRPL\s\s\s\s\s\s\s]\sreceived\sa\sDAO\sfrom\s
 REGEXP_COAP = re.compile('^.*?INFO:\scoap-uip\s\s]\sreceiving\sUDP\sdatagram\sfrom\s\[fd00::2(?P<coap_origin>([0-9a-f]+)):[0-9a-f]+:[0-9a-f]+:[0-9a-f]+\]:[0-9]+\stime:\s(?P<coap_time>([0-9]+))\sms,\sLength:\s(?P<coap_length>([0-9]+))')
 REGEXP_COAPRESP = re.compile('^.*?INFO:\scoap-uip\s\s]\ssent\sto\scoap://\[fd00::2(?P<coap_respdest>([0-9a-f]+)):[0-9a-f]+:[0-9a-f]+:[0-9a-f]+\]:[0-9]+\s(?P<coap_resplength>([0-9]+))\sbytes,\stime:\s(?P<coap_resptime>([0-9]+))\sms')
 
-now = None
 
 def follow(thefile):
     thefile.seek(0, os.SEEK_END)
@@ -146,6 +149,12 @@ def update_topology():
     nodes.count = 0
     for line in loglines:
         chomped_line = line.rstrip()
+        match = re.match(REGEXP_PRED, chomped_line)
+        if(match):
+            t = float(match.group("time"))
+            for n in nodes.nodes:
+                n.predtime = t
+            nodes.read = 0
         match = re.match(REGEXP_ADDR, chomped_line)
         if(match):
             n = match.group("node")
@@ -158,13 +167,11 @@ def update_topology():
             if(match):
                 p = match.group("parent")
                 p = hex2dec(p)
-                #p_t = float(match.group("topology_time"))
                 parent_place = search_node(nodes.nodes,p)
                 if(parent_place == -1):
                     nodes.nodes.append(node(p))
                     parent_place = len(nodes.nodes)-1
                 nodes.nodes[node_place].update_parent(nodes.nodes[parent_place])
-                #nodes.nodes[node_place].update_topology_time(p_t)
             nodes.count += 1
         matchnb = re.match(REGEXP_NB, chomped_line)
         if(matchnb):
@@ -177,8 +184,7 @@ def update_topology():
                     nodes.nodes[node_place].add_neighbour(nodes.nodes[neighbour_place])
         matchint = re.match(REGEXP_INT, chomped_line)
         if(matchint):
-            n = matchint.group("node")
-            n = hex2dec(n)
+            n = (int)(matchint.group("node"))
             node_asn_ms1b = (int)(matchint.group("node_asn_ms1b"))
             node_asn_ls4b = (int)(matchint.group("node_asn_ls4b"))
             node_place = search_node(nodes.nodes,n)
@@ -186,8 +192,7 @@ def update_topology():
                 nodes.nodes[node_place].updtime = ((node_asn_ls4b+node_asn_ms1b*pow(2,32))*10)
         matchdaotx = re.match(REGEXP_DAOTX, chomped_line)
         if(matchdaotx):
-            n = matchdaotx.group("node")
-            n = hex2dec(n)
+            n = (int)(matchdaotx.group("node"))
             dao_asn_ms1b = (int)(matchdaotx.group("dao_asn_ms1b"))
             dao_asn_ls4b = (int)(matchdaotx.group("dao_asn_ls4b"))
             node_place = search_node(nodes.nodes,n)
@@ -195,8 +200,7 @@ def update_topology():
                 nodes.nodes[node_place].lastdao = ((dao_asn_ls4b+dao_asn_ms1b*pow(2,32))*10)
         matchdiotx = re.match(REGEXP_DIOTX, chomped_line)
         if(matchdiotx):
-            n = matchdiotx.group("node")
-            n = hex2dec(n)
+            n = (int)(matchdiotx.group("node"))
             dio_asn_ms1b = (int)(matchdiotx.group("dio_asn_ms1b"))
             dio_asn_ls4b = (int)(matchdiotx.group("dio_asn_ls4b"))
             node_place = search_node(nodes.nodes,n)
@@ -204,8 +208,7 @@ def update_topology():
                 nodes.nodes[node_place].lastdio = ((dio_asn_ls4b+dio_asn_ms1b*pow(2,32))*10)
         matchebgen = re.match(REGEXP_EBGEN, chomped_line)
         if(matchebgen):
-            n = matchebgen.group("node")
-            n = hex2dec(n)
+            n = (int)(matchebgen.group("node"))
             ebgen_asn_ms1b = (int)(matchebgen.group("ebgen_asn_ms1b"))
             ebgen_asn_ls4b = (int)(matchebgen.group("ebgen_asn_ls4b"))
             node_place = search_node(nodes.nodes,n)
@@ -213,8 +216,7 @@ def update_topology():
                 nodes.nodes[node_place].lastebgen = ((ebgen_asn_ls4b+ebgen_asn_ms1b*pow(2,32))*10)
         matchebtx = re.match(REGEXP_EBTX, chomped_line)
         if(matchebtx):
-            n = matchebtx.group("node")
-            n = hex2dec(n)
+            n = (int)(matchebtx.group("node"))
             ebtx_asn_ms1b = (int)(matchebtx.group("ebtx_asn_ms1b"))
             ebtx_asn_ls4b = (int)(matchebtx.group("ebtx_asn_ls4b"))
             node_place = search_node(nodes.nodes,n)
@@ -238,11 +240,6 @@ def update_topology():
             node_place = search_node(nodes.nodes,coap_rd)
             if(node_place != -1):
                 nodes.nodes[node_place].update_coapresp(coap_rt,coap_rl)
-        # if(len(nodes.nodes) == nodes.N):
-        #     nodes.read = 0
-        if(nodes.count == nodes.N):
-            nodes.read = 0
-            nodes.count = 0
 
 ### NODE TEST FUNCTIONS ###
 
