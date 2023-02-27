@@ -47,6 +47,7 @@
 #include "sys/log.h"
 #include "net/ipv6/uip-debug.h"
 #include "rpl-dag-root.h"
+#include "rpl.h"
 
 /* Log configuration */
 #include "sys/log.h"
@@ -85,17 +86,7 @@ PROCESS_THREAD(coap_server, ev, data)
   /* Print out routing tables every minute */
   etimer_set(&et, CLOCK_SECOND * 60);
   while(1) {
-    // Non-storing mode
-    #if (UIP_MAX_ROUTES != 0)
-      LOG_INFO("Routing entries: %u\n", uip_ds6_route_num_routes());
-    #endif
-    #if (UIP_SR_LINK_NUM != 0)
-      LOG_INFO("Routing links: %u\n", uip_sr_num_nodes());
-    #endif
-    PROCESS_YIELD_UNTIL(etimer_expired(&et));
-    etimer_reset(&et);
-
-    // Storing mode
+#if RPL_STORING
     PROCESS_YIELD();
     if(etimer_expired(&et)) {
       LOG_INFO("Routing entries: %u\n", uip_ds6_route_num_routes());
@@ -108,8 +99,19 @@ PROCESS_THREAD(coap_server, ev, data)
         LOG_INFO_("\n");
         route = uip_ds6_route_next(route);
       }
+      rpl_print_neighbor_list();
       etimer_reset(&et);
     }
+#else
+    #if (UIP_MAX_ROUTES != 0)
+      LOG_INFO("Routing entries: %u\n", uip_ds6_route_num_routes());
+    #endif
+    #if (UIP_SR_LINK_NUM != 0)
+      LOG_INFO("Routing links: %u\n", uip_sr_num_nodes());
+    #endif
+    PROCESS_YIELD_UNTIL(etimer_expired(&et));
+    etimer_reset(&et);
+#endif /* RPL_STORING */
   }
 
   PROCESS_END();

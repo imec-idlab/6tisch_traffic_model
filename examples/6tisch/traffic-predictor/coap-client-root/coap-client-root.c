@@ -49,18 +49,18 @@
 #include "net/netstack.h"
 
 #include "rpl-dag-root.h"
+#include "rpl.h"
+#include "sys/node-id.h"
 
 /* Log configuration */
 #include "coap-log.h"
 #define LOG_MODULE "App"
 #define LOG_LEVEL  LOG_LEVEL_APP
 
-/* FIXME: This server address is hard-coded for Cooja and link-local for unconnected border router. */
-//#define SERVER_EP "coap://[fd00::201:1:1:1]"
 #define SERVER_EP "coap://[fd00::208:8:8:8]"
 
-#define SEND_INTERVAL		  (60 * CLOCK_SECOND)
-#define PRED_INTERVAL     (33 * CLOCK_SECOND)
+#define SEND_INTERVAL		  3*60*CLOCK_SECOND
+#define PRED_INTERVAL     (CLOCK_SECOND)
 
 PROCESS(coap_client, "CoAP Client");
 AUTOSTART_PROCESSES(&coap_client);
@@ -72,7 +72,7 @@ static struct etimer et2;
 #define NUMBER_OF_URLS 5
 /* leading and ending slashes only for demo purposes, get cropped automatically when setting the Uri-Path */
 char *service_urls[NUMBER_OF_URLS] =
-{ ".well-known/core", "/actuators/toggle", "battery/", "error/in//path", "/test/chunks" };
+{ ".well-known/core", "test/chunks"};
 
 /* This function is will be passed to COAP_BLOCKING_REQUEST() to handle responses. */
 void
@@ -102,7 +102,12 @@ PROCESS_THREAD(coap_client, ev, data)
 
   coap_endpoint_parse(SERVER_EP, strlen(SERVER_EP), &server_ep);
 
-  etimer_set(&et, random_rand() % SEND_INTERVAL);
+  /* Spread out CoAP GET messages to prevent network flooding */
+  if(node_id < 9){
+    etimer_set(&et, ((node_id-1)*CLOCK_SECOND*(SEND_INTERVAL/9)) % (SEND_INTERVAL));
+  } else {
+    etimer_set(&et, ((node_id-2)*CLOCK_SECOND*(SEND_INTERVAL/9)) % (SEND_INTERVAL));
+  }
   etimer_set(&et2, PRED_INTERVAL);
 
   while(1) {
@@ -110,10 +115,12 @@ PROCESS_THREAD(coap_client, ev, data)
 
     if(etimer_expired(&et)) {
       printf("--Toggle timer--\n");
+      etimer_set(&et, SEND_INTERVAL);
       if(NETSTACK_ROUTING.node_is_reachable()) {
         /* prepare request, TID is set by COAP_BLOCKING_REQUEST() */
         coap_init_message(request, COAP_TYPE_CON, COAP_GET, 0);
-        coap_set_header_uri_path(request, service_urls[4]);
+        int resource = 1;
+        coap_set_header_uri_path(request, service_urls[resource]);
 
         const char msg[] = "Toggle!";
 
@@ -128,14 +135,9 @@ PROCESS_THREAD(coap_client, ev, data)
       } else {
         LOG_INFO("Not reachable yet\n");
       }
-
-      rpl_dag_root_print_links("");
-
-      /* Add some jitter */
-      etimer_set(&et, SEND_INTERVAL
-        - CLOCK_SECOND + (random_rand() % (2 * CLOCK_SECOND)));
     }
     if(etimer_expired(&et2)) {
+      rpl_dag_root_print_links("");
       LOG_INFO("PREDICT %lu ms\n", clock_time());
       etimer_reset(&et2);
     }

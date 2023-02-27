@@ -57,12 +57,15 @@
 
 /* 6TiSCH minimal schedule length.
  * Larger values result in less frequent active slots: reduces capacity and saves energy. */
-#define TSCH_SCHEDULE_CONF_DEFAULT_LENGTH 3
+#define TSCH_SCHEDULE_CONF_DEFAULT_LENGTH 17
 
 #if WITH_SECURITY
 
 /* Enable security */
 #define LLSEC802154_CONF_ENABLED 1
+
+#define ORCHESTRA_CONF_COLLISION_FREE_HASH 1
+#define ORCHESTRA_CONF_UNICAST_SENDER_BASED 1
 
 #endif /* WITH_SECURITY */
 
@@ -71,7 +74,7 @@
 /******************************************************/
 
 /* Choose MOP */
-#define RPL_STORING 0
+#define RPL_STORING 1
 #if RPL_STORING
 #define RPL_CONF_MOP RPL_MOP_STORING_MULTICAST
 #else
@@ -96,7 +99,7 @@
 #define INT_BITMAP 0x8F
 #else
 #define INT_STRATEGY_LEAF_PERIODICAL 1
-#define INT_PERIOD 200
+#define INT_PERIOD 15*60
 #define INT_BITMAP 0x89
 #endif
 
