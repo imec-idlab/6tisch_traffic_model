@@ -977,8 +977,9 @@ PROCESS_THREAD(tsch_send_eb_process, ev, data)
     if(tsch_current_eb_period > 0) {
       /* Next EB transmission with a random delay
        * within [tsch_current_eb_period*0.75, tsch_current_eb_period[ */
-      delay = (tsch_current_eb_period - tsch_current_eb_period / 4)
-        + random_rand() % (tsch_current_eb_period / 4);
+      // delay = (tsch_current_eb_period - tsch_current_eb_period / 4)
+      //   + random_rand() % (tsch_current_eb_period / 4);
+      delay = TSCH_EB_PERIOD;
     } else {
       delay = TSCH_EB_PERIOD;
     }
@@ -1174,8 +1175,8 @@ send_packet(mac_callback_t sent, void *ptr)
 	  /* specify with PACKETBUF_ATTR_METADATA that packetbuf has IEs */
 	  packetbuf_set_attr(PACKETBUF_ATTR_MAC_METADATA, 1);
 #if INT_STRATEGY_LEAF_PERIODICAL || INT_STRATEGY_DAO
+    /* If root, remove INT and collect */
     if(NETSTACK_ROUTING.node_is_root()==1){
-      /* remove all INT*/
       packetbuf_set_attr(PACKETBUF_ATTR_MAC_METADATA, 0);
       ies.int_ie_content_len=0;
     } else {
@@ -1231,6 +1232,7 @@ send_packet(mac_callback_t sent, void *ptr)
 				
 				uint8_t int_entry_decision=true;
 #if INT_STRATEGY_LEAF_PERIODICAL || INT_STRATEGY_DAO
+        /* Only source node is allowed to insert INT */
         int_entry_decision=false;
 #endif
 				
@@ -1279,99 +1281,6 @@ send_packet(mac_callback_t sent, void *ptr)
 						ies.int_ie_content[packetbuf_ielen()+int_len]=packetbuf_attr(PACKETBUF_ATTR_RSSI);
 						int_len++;
 					}
-#if ROUTING_CONF_RPL_CLASSIC
-          /* ASN of TX, last DAO, DIO & EB */
-          if(((ies.int_ie_bitmap & 0x08)>>3)==1) {
-            struct tsch_asn_t temp;
-            /* Get current ASN */
-            ies.int_ie_content[int_len]= (tsch_current_asn.ls4b)>>8;
-            ies.int_ie_content[int_len+1]=tsch_current_asn.ls4b;
-#if INT_STRATEGY_DAO
-            LOG_WARN("INT: Writing DAO ASN: %u %lu\n", tsch_current_asn.ms1b, tsch_current_asn.ls4b);
-#else
-            LOG_WARN("INT: Writing current ASN: %u %lu\n", tsch_current_asn.ms1b, tsch_current_asn.ls4b);
-#endif /* INT_STRATEGY_DAO */
-            int_len += 2;
-#if (!INT_STRATEGY_DAO)
-            /* Get difference of last DAO ASN */
-            temp = tsch_current_asn;
-            TSCH_ASN_DEC_ASN(temp,last_dao_asn);
-            ies.int_ie_content[int_len]= (temp.ls4b)>>16;
-            ies.int_ie_content[int_len+1]= (temp.ls4b)>>8;
-            ies.int_ie_content[int_len+2]=temp.ls4b;
-            LOG_WARN("INT: Writing DAO ASN: %u %lu\n", last_dao_asn.ms1b, last_dao_asn.ls4b);
-            int_len += 3;
-#endif /* (!INT_STRATEGY_DAO) */
-            /* Get difference of last DIO ASN */
-            temp = tsch_current_asn;
-            TSCH_ASN_DEC_ASN(temp,last_dio_asn);
-            ies.int_ie_content[int_len]= (temp.ls4b)>>16;
-            ies.int_ie_content[int_len+1]= (temp.ls4b)>>8;
-            ies.int_ie_content[int_len+2]=temp.ls4b;
-            LOG_WARN("INT: Writing DIO ASN: %u %lu\n", last_dio_asn.ms1b, last_dio_asn.ls4b);
-            int_len += 3;
-            /* Get ASN of last EB generation */
-            temp = tsch_current_asn;
-            TSCH_ASN_DEC_ASN(temp,last_eb_gen_asn);
-            ies.int_ie_content[int_len]= (temp.ls4b)>>8;
-            ies.int_ie_content[int_len+1]=temp.ls4b;
-            LOG_WARN("INT: Writing EB generation ASN: %u %lu\n", last_eb_gen_asn.ms1b, last_eb_gen_asn.ls4b);
-            int_len += 2;
-            /* Get ASN of last EB transmission */
-            temp = tsch_current_asn;
-            TSCH_ASN_DEC_ASN(temp,last_eb_tx_asn);
-            ies.int_ie_content[int_len]= (temp.ls4b)>>8;
-            ies.int_ie_content[int_len+1]=temp.ls4b;
-            LOG_WARN("INT: Writing EB transmission ASN: %u %lu\n", last_eb_tx_asn.ms1b, last_eb_tx_asn.ls4b);
-            int_len += 2;
-          }
-          /* RPL preferred parent */
-          if(((ies.int_ie_bitmap & 0x04)>>2)==1) {
-            // Get preferred parent
-            rpl_parent_t *pp = rpl_get_preferred_parent(default_instance);
-            if(pp != NULL){
-              const linkaddr_t *pp_lladdr = rpl_get_parent_lladdr(pp);
-              ies.int_ie_content[int_len]=pp_lladdr->u8[LINKADDR_SIZE-1];
-            } else {
-              ies.int_ie_content[int_len]=0;
-            }
-            int_len++;
-          }
-          /* Routes */
-          if(((ies.int_ie_bitmap & 0x02)>>1)==1) {
-            uip_ds6_route_t *route = uip_ds6_route_head();
-            while(route) {
-              const uip_ipaddr_t *hop_addr = uip_ds6_route_nexthop(route);
-              if(!uip_ipaddr_cmp(&route,&hop_addr)) {
-                ies.int_ie_content[int_len]=route->ipaddr.u16[LINKADDR_SIZE-1]>>8;
-                ies.int_ie_content[int_len+1]=hop_addr->u16[LINKADDR_SIZE-1]>>8;
-                int_len += 2; 
-              }
-              route = uip_ds6_route_next(route);
-            }
-            // Insert 0 to indicate routes are finished
-            ies.int_ie_content[int_len] = 0;
-            int_len++;
-          }
-          /* RPL neigbours */
-          if((ies.int_ie_bitmap & 0x01)==1) {
-            rpl_parent_t *pp = rpl_get_preferred_parent(default_instance);
-            rpl_parent_t *nbr = nbr_table_head(rpl_parents);
-            while(nbr != NULL){
-              // Do not include preferred parent, already included
-              if(nbr != pp){
-                const linkaddr_t *nbr_lladdr = rpl_get_parent_lladdr(nbr);
-                ies.int_ie_content[int_len]=nbr_lladdr->u8[LINKADDR_SIZE-1];
-                int_len++;
-              }
-              nbr = nbr_table_next(rpl_parents, nbr);
-            } 
-          }
-#else
-        if((ies.int_ie_bitmap & 0x0F)!=0){
-						LOG_WARN("INT: Cannot add INT due to unsupported INT bitmap %u. Switch to RPL classic.\n",ies.int_ie_bitmap);
-					}
-#endif /* ROUTING_CONF_RPL_CLASSIC */
 
           if((ies.int_ie_bitmap & 0x07)!=0){
 						LOG_WARN("INT: Cannot add INT due to unsupported INT bitmap %u \n",ies.int_ie_bitmap);
@@ -1414,8 +1323,6 @@ send_packet(mac_callback_t sent, void *ptr)
 		
 #if INT_STRATEGY_PERIODICAL || INT_STRATEGY_LEAF_PERIODICAL
 		if((int32_t)tsch_current_asn.ls4b-last_int_asn > current_int_period){
-				
-				//last_int_asn = (int32_t)tsch_current_asn.ls4b;
 				int_decision=true;
 				LOG_WARN("INT: Initiating INT with seqno %u \n",int_sequence_no);
 		}
@@ -1473,10 +1380,23 @@ send_packet(mac_callback_t sent, void *ptr)
 				ies.int_ie_content[2]=ies.int_ie_bitmap;
 				int_len=3;
 			if(int_entry_decision){
-        /* Node linkadress */
+        /* Node linkadress and ETX */
 				if(((ies.int_ie_bitmap & 0x80)>>7)==1){
 					ies.int_ie_content[int_len]=linkaddr_node_addr.u8[LINKADDR_SIZE-1];
           int_len=int_len+1;
+          // Get preferred parent
+          rpl_parent_t *pp = rpl_get_preferred_parent(default_instance);
+          if(pp != NULL){
+            // Get ETX
+            const struct link_stats *stats = rpl_get_parent_link_stats(pp);
+            ies.int_ie_content[int_len] = stats->etx>>8;
+            ies.int_ie_content[int_len+1] = stats->etx;
+          } else {
+            // Zero to indicate false ETX
+            ies.int_ie_content[int_len] = 0;
+            ies.int_ie_content[int_len+1] = 0;
+          }
+          int_len=int_len+2;
 				}
         /* 4bits channel + 12 bits timestamp (last 12 bits of ASN) */
 				if(((ies.int_ie_bitmap & 0x40)>>6)==1){	
@@ -1531,20 +1451,26 @@ send_packet(mac_callback_t sent, void *ptr)
 					ies.int_ie_content[int_len+2]=temp.ls4b;
           LOG_WARN("INT: Writing DIO ASN: %u %lu\n", last_dio_asn.ms1b, last_dio_asn.ls4b);
           int_len += 3;
-          /* Get ASN of last EB generation */
+          /* Get difference of last EB generation */
           temp = tsch_current_asn;
           TSCH_ASN_DEC_ASN(temp,last_eb_gen_asn);
           ies.int_ie_content[int_len]= (temp.ls4b)>>8;
 					ies.int_ie_content[int_len+1]=temp.ls4b;
           LOG_WARN("INT: Writing EB generation ASN: %u %lu\n", last_eb_gen_asn.ms1b, last_eb_gen_asn.ls4b);
           int_len += 2;
-          /* Get ASN of last EB transmission */
+          /* Get difference of last EB transmission */
           temp = tsch_current_asn;
           TSCH_ASN_DEC_ASN(temp,last_eb_tx_asn);
           ies.int_ie_content[int_len]= (temp.ls4b)>>8;
 					ies.int_ie_content[int_len+1]=temp.ls4b;
           LOG_WARN("INT: Writing EB transmission ASN: %u %lu\n", last_eb_tx_asn.ms1b, last_eb_tx_asn.ls4b);
           int_len += 2;
+          /* Get time source neighbour */
+          struct tsch_neighbor *ts = tsch_queue_get_time_source();
+          linkaddr_t *ts_addr = tsch_queue_get_nbr_address(ts);
+          ies.int_ie_content[int_len] = ts_addr->u8[LINKADDR_SIZE-1];
+          LOG_WARN("INT: Writing current time source: %u\n", ts_addr->u8[LINKADDR_SIZE-1]);
+          int_len += 1;
         }
         /* RPL preferred parent */
         if(((ies.int_ie_bitmap & 0x04)>>2)==1) {
@@ -1576,17 +1502,13 @@ send_packet(mac_callback_t sent, void *ptr)
         }
         /* RPL neigbours */
         if((ies.int_ie_bitmap & 0x01)==1) {
-          rpl_parent_t *pp = rpl_get_preferred_parent(default_instance);
-          rpl_parent_t *nbr = nbr_table_head(rpl_parents);
-          while(nbr != NULL){
-            // Do not include preferred parent, already included
-            if(nbr != pp){
-              const linkaddr_t *nbr_lladdr = rpl_get_parent_lladdr(nbr);
-              ies.int_ie_content[int_len]=nbr_lladdr->u8[LINKADDR_SIZE-1];
-              int_len++;
-            }
-            nbr = nbr_table_next(rpl_parents, nbr);
-          } 
+          uip_ds6_nbr_t *nbr = uip_ds6_nbr_head();
+          while(nbr != NULL) {
+            const uip_lladdr_t *nbr_lladdr = uip_ds6_nbr_get_ll(nbr);
+            ies.int_ie_content[int_len]=nbr_lladdr->addr[LINKADDR_SIZE-1];
+            int_len++;
+            nbr = uip_ds6_nbr_next(nbr);
+          }
         }
 #else
         if((ies.int_ie_bitmap & 0x0F)!=0){
@@ -1748,11 +1670,13 @@ packet_input(void)
 			packetbuf_ie_copyfrom(ies.int_ie_content, ies.int_ie_content_len);
 			
 			if(NETSTACK_ROUTING.node_is_root()==1){
-				frame80215e_retrieve_ie_int_header(&ies);
+        frame80215e_retrieve_ie_int_header(&ies);
+        /* Update own RPL control messages */
+        LOG_WARN("INT: ROOT DIO ASN %u %lu EB gen ASN %u %lu EB tx ASN %u %lu\n", last_dio_asn.ms1b, last_dio_asn.ls4b, last_eb_gen_asn.ms1b, last_eb_gen_asn.ls4b, last_eb_tx_asn.ms1b, last_eb_tx_asn.ls4b);
         int i = 3;
         if(((ies.int_ie_bitmap & 0x80)>>7)==1) {
-          LOG_WARN("INT: RECEIVED INT from node %u: seqno: %u len %u ASN %u %lu\n", ies.int_ie_content[i], ies.int_ie_seq_no, ies.int_ie_content_len, tsch_current_asn.ms1b, tsch_current_asn.ls4b);
-          i += 1;
+          LOG_WARN("INT: RECEIVED INT from node %u: seqno: %u len %u ASN %u %lu ETX %u ", ies.int_ie_content[i], ies.int_ie_seq_no, ies.int_ie_content_len, tsch_current_asn.ms1b, tsch_current_asn.ls4b, ((ies.int_ie_content[i+1]<<8) + ies.int_ie_content[i+2]));
+          i += 3;
         }
         if(((ies.int_ie_bitmap & 0x70)>>7)==0x70) {
           LOG_WARN("INT: INT DATA: len: %u ASN: %u %lu ch: %u rssi: %d neighbours: ", ies.int_ie_content_len,tsch_current_asn.ms1b,tsch_current_asn.ls4b,packetbuf_attr(PACKETBUF_ATTR_CHANNEL),(signed short)packetbuf_attr(PACKETBUF_ATTR_RSSI));
@@ -1765,14 +1689,14 @@ packet_input(void)
           struct tsch_asn_t tx_asn;
           struct tsch_asn_t diff;
           struct tsch_asn_t res;
+          struct tsch_asn_t ebgen_asn;
+          struct tsch_asn_t ebtx_asn;
           /* Get ASN of transmission */
           if(i+1 < ies.int_ie_content_len) {
             tx_asn.ls4b = (tsch_current_asn.ls4b & 0xFFFF0000) + ((ies.int_ie_content[i]<<8) + ies.int_ie_content[i+1]);
             tx_asn.ms1b = tsch_current_asn.ms1b;
 #if INT_STRATEGY_DAO
-            LOG_WARN("INT: last DAO at ASN %u %lu current ASN %u %lu\n", tx_asn.ms1b, tx_asn.ls4b, tsch_current_asn.msb1, tsch_current_asn.ls4b);
-#else
-            LOG_WARN("INT: TX at ASN %u %lu\n", tx_asn.ms1b, tx_asn.ls4b);
+            LOG_WARN_("DAO ASN %u %lu ", tx_asn.ms1b, tx_asn.ls4b);
 #endif /* INT_STRATEGY_DAO */
           }
           i += 2;
@@ -1783,7 +1707,7 @@ packet_input(void)
             diff.ms1b = 0;
             res = tx_asn;
             TSCH_ASN_DEC_ASN(res,diff);
-            LOG_WARN("INT: last DAO of %u at ASN %u %lu\n", ies.int_ie_content[3], res.ms1b, res.ls4b);
+            LOG_WARN_("DAO ASN %u %lu ", res.ms1b, res.ls4b);
           }
           i += 3;
 #endif /* (!INT_STRATEGY_DAO) */
@@ -1793,37 +1717,46 @@ packet_input(void)
             diff.ms1b = 0;
             res = tx_asn;
             TSCH_ASN_DEC_ASN(res,diff);
-            LOG_WARN("INT: last DIO of %u at ASN %u %lu\n", ies.int_ie_content[3], res.ms1b, res.ls4b);
+            // LOG_WARN("INT: last DIO of %u at ASN %u %lu\n", ies.int_ie_content[3], res.ms1b, res.ls4b);
           }
           i += 3;
           /* Get ASN of last EB generation */
           if(i+1 < ies.int_ie_content_len) {
             diff.ls4b = ((ies.int_ie_content[i]<<8) + ies.int_ie_content[i+1]);
             diff.ms1b = 0;
-            res = tx_asn;
-            TSCH_ASN_DEC_ASN(res,diff);
-            LOG_WARN("INT: last EB generation of %u at ASN %u %lu\n", ies.int_ie_content[3], res.ms1b, res.ls4b);
+            ebgen_asn = tx_asn;
+            TSCH_ASN_DEC_ASN(ebgen_asn,diff);
+            LOG_WARN_("EB gen ASN %u %lu ", ebgen_asn.ms1b, ebgen_asn.ls4b);
           }
           i += 2;
           /* Get ASN of last EB transmission */
           if(i+1 < ies.int_ie_content_len) {
             diff.ls4b = ((ies.int_ie_content[i]<<8) + ies.int_ie_content[i+1]);
             diff.ms1b = 0;
-            res = tx_asn;
-            TSCH_ASN_DEC_ASN(res,diff);
-            LOG_WARN("INT: last EB transmission of %u at ASN %u %lu\n", ies.int_ie_content[3], res.ms1b, res.ls4b);
+            ebtx_asn = tx_asn;
+            TSCH_ASN_DEC_ASN(ebtx_asn,diff);
+            LOG_WARN_("EB tx ASN %u %lu ", ebtx_asn.ms1b, ebtx_asn.ls4b);
           }
           i += 2;
+          /* Get time source neighbour */
+          if(i < ies.int_ie_content_len) {
+#if INT_STRATEGY_DAO
+            LOG_WARN_("TS %u ",  ies.int_ie_content[i]);
+#else
+            LOG_WARN_("TS %u\n",  ies.int_ie_content[i]);
+#endif /* INT_STRATEGY_DAO */
+          }       
+          i += 1;
         }
         /* RPL preferred parent */
         if(((ies.int_ie_bitmap & 0x04)>>2)==1) {
           if(i < ies.int_ie_content_len && ies.int_ie_content[i] != 0) {
-            LOG_WARN("INT: %u preferred parent of %u\n", ies.int_ie_content[i], ies.int_ie_content[3]);
+            LOG_WARN_("PP %u\n",  ies.int_ie_content[i]);
           } else {
-            LOG_WARN("INT: %u has no preferred parent\n", ies.int_ie_content[3]);
+            LOG_WARN_("PP 1\n");
           }
           i++;
-        }
+        }        
         /* Routes */
         if(((ies.int_ie_bitmap & 0x02)>>1)==1) {
           while(i < ies.int_ie_content_len && ies.int_ie_content[i] != 0) {
@@ -1831,13 +1764,29 @@ packet_input(void)
             i += 2;
           }
           i++;
+          /* Root: update own routes */
+          uip_ds6_route_t *route = uip_ds6_route_head();
+          while(route) {
+            const uip_ipaddr_t *hop_addr = uip_ds6_route_nexthop(route);
+            if(!uip_ipaddr_cmp(&route,&hop_addr)) {
+              LOG_WARN("INT: %u via %u via %u\n", route->ipaddr.u16[LINKADDR_SIZE-1]>>8, hop_addr->u16[LINKADDR_SIZE-1]>>8, linkaddr_node_addr.u8[LINKADDR_SIZE-1]);
+            }
+            route = uip_ds6_route_next(route);
+          }
         }
         /* RPL neigbours */
         if((ies.int_ie_bitmap & 0x01)==1) {
           while(i < ies.int_ie_content_len) {
             LOG_WARN("INT: %u neighbour of %u\n", ies.int_ie_content[i], ies.int_ie_content[3]);
             i++;
-          } 
+          }
+          /* Root: update own RPL neighbours */
+          uip_ds6_nbr_t *nbr = uip_ds6_nbr_head();
+          while(nbr != NULL) {
+            const uip_lladdr_t *nbr_lladdr = uip_ds6_nbr_get_ll(nbr);
+            LOG_WARN("INT: %u neighbour of %u\n", nbr_lladdr->addr[LINKADDR_SIZE-1], linkaddr_node_addr.u8[LINKADDR_SIZE-1]);
+            nbr = uip_ds6_nbr_next(nbr);
+          }
         }
 
 #endif /* ROUTING_CONF_RPL_CLASSIC */
