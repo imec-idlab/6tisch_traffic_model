@@ -1,37 +1,16 @@
-<img src="https://github.com/contiki-ng/contiki-ng.github.io/blob/master/images/logo/Contiki_logo_2RGB.png" alt="Logo" width="256">
-
-# Contiki-NG: The OS for Next Generation IoT Devices
-
-[![Github Actions](https://github.com/contiki-ng/contiki-ng/workflows/CI/badge.svg?branch=develop)](https://github.com/contiki-ng/contiki-ng/actions)
-[![Documentation Status](https://readthedocs.org/projects/contiki-ng/badge/?version=master)](https://contiki-ng.readthedocs.io/en/master/?badge=master)
-[![license](https://img.shields.io/badge/license-3--clause%20bsd-brightgreen.svg)](https://github.com/contiki-ng/contiki-ng/blob/master/LICENSE.md)
-[![Latest release](https://img.shields.io/github/release/contiki-ng/contiki-ng.svg)](https://github.com/contiki-ng/contiki-ng/releases/latest)
-[![GitHub Release Date](https://img.shields.io/github/release-date/contiki-ng/contiki-ng.svg)](https://github.com/contiki-ng/contiki-ng/releases/latest)
-[![Last commit](https://img.shields.io/github/last-commit/contiki-ng/contiki-ng.svg)](https://github.com/contiki-ng/contiki-ng/commit/HEAD)
-
-[![Stack Overflow Tag](https://img.shields.io/badge/Stack%20Overflow%20tag-Contiki--NG-blue?logo=stackoverflow)](https://stackoverflow.com/questions/tagged/contiki-ng)
-[![Gitter](https://img.shields.io/badge/Gitter-Contiki--NG-blue?logo=gitter)](https://gitter.im/contiki-ng)
-[![Twitter](https://img.shields.io/badge/Twitter-%40contiki__ng-blue?logo=twitter)](https://twitter.com/contiki_ng)
-
-Contiki-NG is an open-source, cross-platform operating system for Next-Generation IoT devices. It focuses on dependable (secure and reliable) low-power communication and standard protocols, such as IPv6/6LoWPAN, 6TiSCH, RPL, and CoAP. Contiki-NG comes with extensive documentation, tutorials, a roadmap, release cycle, and well-defined development flow for smooth integration of community contributions.
-
-Unless explicitly stated otherwise, Contiki-NG sources are distributed under
-the terms of the [3-clause BSD license](LICENSE.md). This license gives
-everyone the right to use and distribute the code, either in binary or
-source code format, as long as the copyright license is retained in
-the source code.
-
-Contiki-NG started as a fork of the Contiki OS and retains some of its original features.
-
-Find out more:
-
-* GitHub repository: https://github.com/contiki-ng/contiki-ng
-* Documentation: https://github.com/contiki-ng/contiki-ng/wiki
-* Web site: http://contiki-ng.org
-* Nightly testbed runs: https://contiki-ng.github.io/testbed
-
-Engage with the community:
-
-* Contiki-NG tag on Stack Overflow: https://stackoverflow.com/questions/tagged/contiki-ng
-* Gitter: https://gitter.im/contiki-ng
-* Twitter: https://twitter.com/contiki_ng
+# Real-time traffic predictor for 6TiSCH
+Below you can find a short tutorial on how to use the traffic predictor with Cooja.
+### Step 1: Start cooja simulator
+- Open a new terminal and navigate to `tools/cooja/`.
+- Execute `ant run`, or `ant run_bigmem` for longer simulations.
+- Open the `examples/6tisch/traffic-predictor/6tisch-full-stack10P2P2.csc` simulation.
+- Compile and create all nodes.
+### Step 2: Connect to 6LBR via serial socket
+- Open a new terminal and navigate to `examples/rpl-border-router/`.
+- Execute `make TARGET=cooja connect-router-cooja | tee topology.log` to connect to the 6LBR and log its output in `topology.log`.
+- Keep the terminal open to continue logging.
+### Start the traffic predictor
+- Open new terminal and navigate to `examples/rpl-border-router/`.
+- Execute `python3 traffic_predictor_sm.py 1 <prediction_time>`, 1 indicates we are predicting in real-time and `<prediction_time>` is the prediction interval in seconds.
+- A new prediction will be printed out every second for all nodes, as soon as the predictor has received telemetry from all nodes.
+- In `traffic_predictor_sm.py`, `n.print_n(1, 1, prediction_interval)` on line 347 allows you to enable or disable control traffic telemetry info (first parameter) and traffic per protocol (second parameter).
