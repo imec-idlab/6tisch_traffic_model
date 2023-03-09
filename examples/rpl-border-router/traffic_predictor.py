@@ -7,30 +7,32 @@ import copy
 from sympy import *
 from sympy.parsing.sympy_parser import parse_expr
 from itertools import combinations
-import nodes
+import nodes as ns
 import parse_log
 import csv
+import sys
 
 ##################
 ### PARAMETERS ###
 ##################
 
 # TSCH #
-EB_PERIOD       = 14.0      # Default contiki-NG 16, recommended 4
-L_EB            = 37        # Beacon length
+EB_PERIOD       = 16.0      # Default contiki-NG 16, recommended 4
+L_EB            = 37.0      # Beacon length
 L_MAC_HDR       = 23        # MAC header
+SF_PERIOD       = 3.97      # Slotframe size
 
 # RPL #
-IMAX            = 1048.0    # Trickle maximum interval
+IMAX            = 1048.0    # Trickle maximum interval 3/4*Imax
 L_DIO           = 96        # DIO length
-DAO_PERIOD      = 28.0*60   # DAG lifetime, 30-1/2 minutes
+DAO_PERIOD      = 15*60     # DAG lifetime, 1/2*DAG lifetime
 L_DAO           = 85        # DAO length
 L_DAO_ACK       = 43        # DAO ACK length
 
 L_TOT_HDR       = 49        # Fixed header size
 
 # CoAP
-COAP_PERIOD     = 60        # 1 minute
+COAP_PERIOD     = 3*60      # 3 minutes
 L_COAP_RQ       = 16        # CoAP request payload
 L_COAP_RP       = 30        # CoAP response payload
 
@@ -38,48 +40,71 @@ L_COAP_RP       = 30        # CoAP response payload
 L_EACK          = 19        # EACK length
 
 # PREDICTION
-TIME            = 60*60     # Prediction time (minutes)
 SERVER          = 8         # Server node ID
 ROOT            = 1         # RPL root node ID
-
-#################
-### Functions ###
-#################
+INT_PERIOD      = 15*60     # INT period
 
 ###
-# Search node in nodes
-# Input:    Nodes, node ID
-# Output:   Index of node in nodes
+# Get EB bytes during prediction interval
+# Input:    nodes, prediction interval (p_time), optional telemetry enabled (opt_tel)
+# Output:   TX and RX bytes for every node in nodes
 ###
-def search_node(nodes,n):
-    if(len(nodes) != 0):
-        for i in range(0,len(nodes)):
-            if(n == nodes[i].id):
-                return i
-    return -1
-
-###
-# Get EB bytes within one EB period
-# Input:    Nodes
-# Output:   None
-###
-def get_eb_bytes(nodes):
+def get_eb_bytes(nodes, p_time, opt_tel):
+    ti = p_time*1000.0
+    eb = EB_PERIOD*1000.0
+    sf = SF_PERIOD*1000.0
     for n in nodes:
-        n.ebtx += L_EB
+        if(opt_tel and (n.predtime != None) and (n.lastebgen != None) and (n.lastebtx != None)):
+            to1 = n.predtime - (n.lastebgen + np.floor((n.predtime-n.lastebgen)/eb)*eb)
+            to2 = n.predtime - (n.lastebtx + np.floor((n.predtime-n.lastebtx)/sf)*sf)
+            to1_ = ti+to1-np.floor((ti+to1)/eb)*eb
+            to2_ = ti+to2-np.floor((ti+to2)/sf)*sf
+            if(ti+to1-eb > 0):
+                n_eb = np.floor((ti+to1-eb)/eb)+1
+                if(to2 > to1):
+                    n_eb += 1
+                if(to2_ > to1_):
+                    n_eb -= 1
+            else:
+                n_eb = 0
+                if(to2 > to1):
+                    n_eb += 1
+        else:
+            n_eb = ti/eb
+        n.ebtx = n_eb*L_EB
+        receivers = n.search_eb_receivers()
+        if(receivers != 0):
+            for r in receivers:
+                r.ebrx += n_eb*L_EB
 
 ###
-# Get DIO bytes within one EB period
-# Input:    Nodes
-# Output:   None
+# Get DIO bytes during prediction interval
+# Input:    nodes, prediction interval (p_time), optional telemetry enabled (opt_tel)
+# Output:   TX and RX bytes for every node in nodes
 ###
-def get_dio_bytes(nodes):
+def get_dio_bytes(nodes, p_time, opt_tel):
+    ti = p_time*1000.0
+    dio = IMAX*1000.0
     for n in nodes:
-        n.diotx += L_DIO
+        if(opt_tel and (n.predtime != None) and (n.lastdio != None)):
+            to = n.predtime - (n.lastdio + np.floor((n.predtime-n.lastdio)/dio)*dio)
+            n_dio = np.floor((ti+to)/dio)
+            n_dio = ti/dio
+            n.diotx = n_dio*L_DIO
+            if(n.n != 0):
+                for nb in n.ns:
+                    nb.diorx += n_dio*L_DIO
+        else:
+            n_dio = ti/dio
+        n.diotx = n_dio*L_DIO
+        if(n.n != 0):
+            for nb in n.ns:
+                nb.diorx += n_dio*L_DIO
 
 ###
-# Get multihop path from sender to receiver
+# Get multihop non-storing mode path from sender to receiver
 # Input:    sender and receiver nodes
-# Output:   uplink and downlink path
+# Output:   path from sender to receiver
 ###
 def get_multihop_path(sender, receiver):
     uplink, downlink = [], []
@@ -132,7 +157,11 @@ def get_multihop_path(sender, receiver):
         downlink = np.concatenate((downlink,temp[::-1]))
     return uplink, downlink
 
-# TODO: remove this function
+###
+# Get Source Routing Header and Hop-2-hop header for DAO
+# Input:    
+# Output:   
+###
 def get_source_routing_header(node, is_p2p):
     hops = 1
     if(node.pn.id == 1):
@@ -193,9 +222,7 @@ def get_srh_h2h(path):
         if(downlink_hops != 0):
             SRH_F = (downlink_hops-1)*8 + 9
             SRH_I = SRH_F
-            #TODO: this conflicts with type 3 paths
             SRH_L = SRH_I
-            #SRH_L = SRH_I - 8
             path_type = 2
         else:
             SRH_F, SRH_I, SRH_L = 0, 0, 0
@@ -226,12 +253,21 @@ def get_fragmenting(payload, mac_hdr, ipudp_hdr, srh):
             payload -= temp
     return fragments
 
+def get_etx(node1, node2):
+    if((node1.pn != None) and (node1.pn.id == node2.id)):
+        etx = max(node1.etx,1)
+    elif((node2.pn != None) and (node2.pn.id == node1.id)):
+        etx = max(node2.etx,1)
+    else:
+        etx = 1
+    return etx
+
 ###
-# Get CoAP bytes sent for a given path and payload
-# Input:    Path - array of nodes, payload, MAC header and total header
-# Output:   None
+# Get CoAP bytes for a given path and payload
+# Input:    Path, payload, MAC header, total header, number of CoAP messages
+# Output:   TX and RX bytes for every node in path
 ###
-def get_multihop_coap_bytes(path, payload, mac_hdr, tot_hdr):
+def get_multihop_coap_bytes(path, payload, mac_hdr, tot_hdr, n_coap):
     # Get Source Routing Header and hop-to-hop header
     H2H_F, H2H_I, H2H_L, SRH_F, SRH_I, SRH_L, path_type, uplink_hops, downlink_hops = get_srh_h2h(path)
     # Get frames
@@ -242,102 +278,169 @@ def get_multihop_coap_bytes(path, payload, mac_hdr, tot_hdr):
     mhf_downlink = get_fragmenting(payload, mac_hdr, tot_hdr, SRH_F)
     mhi_downlink = get_fragmenting(payload, mac_hdr, tot_hdr, SRH_I)
     mhl_downlink = get_fragmenting(payload, mac_hdr, tot_hdr, SRH_L)
+    etx = 1
     # Direct link
     if(len(path) == 2):
-        path[0].coaptx += sum(single)
-        path[-1].eacktx += len(single)*L_EACK
-    # P2P without root - TODO: check this
+        etx = get_etx(path[0], path[-1])
+        path[0].coaptx += sum(single)*n_coap*etx
+        path[-1].eacktx += len(single)*L_EACK*n_coap
+        path[-1].coaprx += sum(single)*n_coap
+        path[0].eackrx += len(single)*L_EACK*n_coap
+    # P2P without root
     elif(path_type == 3):
-        path[0].coaptx += sum(mhf_uplink)
-        path[1].eacktx += len(mhf_uplink)*L_EACK
+        etx = get_etx(path[0], path[1])
+        path[0].coaptx += sum(mhf_uplink)*n_coap*etx
+        path[1].eacktx += len(mhf_uplink)*L_EACK*n_coap
+        path[1].coaprx += sum(mhf_uplink)*n_coap
+        path[0].eackrx += len(mhf_uplink)*L_EACK*n_coap
         for i in range(1, len(path)-2):
-            path[i].coaptx += sum(mhi_uplink)
-            path[i+1].eacktx += len(mhi_uplink)*L_EACK
-        path[-2].coaptx += sum(mhl_uplink)
-        path[-1].eacktx += len(mhl_uplink)*L_EACK
+            etx = get_etx(path[i], path[i+1])
+            path[i].coaptx += sum(mhi_uplink)*n_coap*etx
+            path[i+1].eacktx += len(mhi_uplink)*L_EACK*n_coap
+            path[i+1].coaprx += sum(mhi_uplink)*n_coap
+            path[i].eackrx += len(mhi_uplink)*L_EACK*n_coap
+        etx = get_etx(path[-1], path[-2])
+        path[-2].coaptx += sum(mhl_uplink)*n_coap*etx
+        path[-1].eacktx += len(mhl_uplink)*L_EACK*n_coap
+        path[-1].coaprx += sum(mhl_uplink)*n_coap
+        path[-2].eackrx += len(mhl_uplink)*L_EACK*n_coap
     # Uplink non-P2P
     elif(path_type == 0):
-        path[0].coaptx += sum(mhf_uplink)
-        path[1].eacktx += len(mhf_uplink)*L_EACK
+        etx = get_etx(path[0], path[1])
+        path[0].coaptx += sum(mhf_uplink)*n_coap*etx
+        path[1].eacktx += len(mhf_uplink)*L_EACK*n_coap
+        path[1].coaprx += sum(mhf_uplink)*n_coap
+        path[0].eackrx += len(mhf_uplink)*L_EACK*n_coap
         for i in range(1, len(path)-2):
-            path[i].coaptx += sum(mhi_uplink)
-            path[i+1].eacktx += len(mhi_uplink)*L_EACK
-        path[-2].coaptx += sum(mhl_uplink)
-        path[-1].eacktx += len(mhl_uplink)*L_EACK
+            etx = get_etx(path[i], path[i+1])
+            path[i].coaptx += sum(mhi_uplink)*n_coap*etx
+            path[i+1].eacktx += len(mhi_uplink)*L_EACK*n_coap
+            path[i+1].coaprx += sum(mhi_uplink)*n_coap
+            path[i].eackrx += len(mhi_uplink)*L_EACK*n_coap
+        etx = get_etx(path[-2], path[-1])
+        path[-2].coaptx += sum(mhl_uplink)*n_coap*etx
+        path[-1].eacktx += len(mhl_uplink)*L_EACK*n_coap
+        path[-1].coaprx += sum(mhl_uplink)*n_coap
+        path[-2].eackrx += len(mhl_uplink)*L_EACK*n_coap
     # Downlink non-P2P
     elif(path_type == 1):
-        path[0].coaptx += sum(mhf_downlink)
-        path[1].eacktx += len(mhf_downlink)*L_EACK
+        etx = get_etx(path[0], path[1])
+        path[0].coaptx += sum(mhf_downlink)*n_coap*etx
+        path[1].eacktx += len(mhf_downlink)*L_EACK*n_coap
+        path[1].coaprx += sum(mhf_downlink)*n_coap
+        path[0].eackrx += len(mhf_downlink)*L_EACK*n_coap
         for i in range(1, len(path)-2):
-            path[i].coaptx += sum(mhi_downlink)
-            path[i+1].eacktx += len(mhi_downlink)*L_EACK
-        path[-2].coaptx += sum(mhl_downlink)
-        path[-1].eacktx += len(mhl_downlink)*L_EACK
+            etx = get_etx(path[i], path[i+1])
+            path[i].coaptx += sum(mhi_downlink)*n_coap*etx
+            path[i+1].eacktx += len(mhi_downlink)*L_EACK*n_coap
+            path[i+1].coaprx += sum(mhi_downlink)*n_coap
+            path[i].eackrx += len(mhi_downlink)*L_EACK*n_coap
+        etx = get_etx(path[-2], path[-1])
+        path[-2].coaptx += sum(mhl_downlink)*n_coap*etx
+        path[-1].eacktx += len(mhl_downlink)*L_EACK*n_coap
+        path[-1].coaprx += sum(mhl_downlink)*n_coap
+        path[-2].eackrx += len(mhl_downlink)*L_EACK*n_coap
     # P2P with root
     elif(path_type == 2):
         # Uplink
-        path[0].coaptx += sum(mhf_uplink)
-        path[1].eacktx += len(mhf_uplink)*L_EACK  
+        etx = get_etx(path[0], path[1])
+        path[0].coaptx += sum(mhf_uplink)*n_coap*etx
+        path[1].eacktx += len(mhf_uplink)*L_EACK*n_coap  
+        path[1].coaprx += sum(mhf_uplink)*n_coap
+        path[0].eackrx += len(mhf_uplink)*L_EACK*n_coap  
         i = 1          
         if(uplink_hops == 2):
-            path[1].coaptx += sum(mhl_uplink)
-            path[2].eacktx += len(mhl_uplink)*L_EACK
+            etx = get_etx(path[1], path[2])
+            path[1].coaptx += sum(mhl_uplink)*n_coap*etx
+            path[2].eacktx += len(mhl_uplink)*L_EACK*n_coap
+            path[2].coaprx += sum(mhl_uplink)*n_coap
+            path[1].eackrx += len(mhl_uplink)*L_EACK*n_coap
             i = 2
         elif(uplink_hops > 2):
             i = 2
             while(path[i].id != ROOT):
-                path[i-1].coaptx += sum(mhi_uplink)
-                path[i].eacktx += len(mhi_uplink)*L_EACK
+                etx = get_etx(path[i], path[i-1])
+                path[i-1].coaptx += sum(mhi_uplink)*n_coap*etx
+                path[i].eacktx += len(mhi_uplink)*L_EACK*n_coap
+                path[i].coaprx += sum(mhi_uplink)*n_coap
+                path[i-1].eackrx += len(mhi_uplink)*L_EACK*n_coap
                 i += 1
-            path[i-1].coaptx += sum(mhl_uplink)
-            path[i].eacktx += len(mhl_uplink)*L_EACK
+            etx = get_etx(path[i], path[i-1])
+            path[i-1].coaptx += sum(mhl_uplink)*n_coap*etx
+            path[i].eacktx += len(mhl_uplink)*L_EACK*n_coap
+            path[i].coaprx += sum(mhl_uplink)*n_coap
+            path[i-1].eackrx += len(mhl_uplink)*L_EACK*n_coap
         # Downlink
-        path[i].coaptx += sum(mhf_downlink)
-        path[i+1].eacktx += len(mhf_downlink)*L_EACK
+        etx = get_etx(path[i], path[i+1])
+        path[i].coaptx += sum(mhf_downlink)*n_coap*etx
+        path[i+1].eacktx += len(mhf_downlink)*L_EACK*n_coap
+        path[i+1].coaprx += sum(mhf_downlink)*n_coap
+        path[i].eackrx += len(mhf_downlink)*L_EACK*n_coap
         i += 1
         if(downlink_hops == 2):
-            path[i].coaptx += sum(mhl_downlink)
-            path[i+1].eacktx += len(mhl_downlink)*L_EACK
+            etx = get_etx(path[i], path[i+1])
+            path[i].coaptx += sum(mhl_downlink)*n_coap*etx
+            path[i+1].eacktx += len(mhl_downlink)*L_EACK*n_coap
+            path[i+1].coaprx += sum(mhl_downlink)*n_coap
+            path[i].eackrx += len(mhl_downlink)*L_EACK*n_coap
             i += 1
         elif(downlink_hops > 2):
             i += 1
             while(i != len(path)-1):
-                path[i-1].coaptx += sum(mhi_downlink)
-                path[i].eacktx += len(mhi_downlink)*L_EACK
+                etx = get_etx(path[i], path[i-1])
+                path[i-1].coaptx += sum(mhi_downlink)*n_coap*etx
+                path[i].eacktx += len(mhi_downlink)*L_EACK*n_coap
+                path[i].coaprx += sum(mhi_downlink)*n_coap
+                path[i-1].eackrx += len(mhi_downlink)*L_EACK*n_coap
                 i += 1
-            path[i-1].coaptx += sum(mhl_downlink)
-            path[i].eacktx += len(mhl_downlink)*L_EACK
+            etx = get_etx(path[i], path[i-1])
+            path[i-1].coaptx += sum(mhl_downlink)*n_coap*etx
+            path[i].eacktx += len(mhl_downlink)*L_EACK*n_coap
+            path[i].coaprx += sum(mhl_downlink)*n_coap
+            path[i-1].eackrx += len(mhl_downlink)*L_EACK*n_coap
 
 ###
-# Get CoAP bytes from bidirectional traffic (request-response)
-# Input:    Sender, receiver, request and response payload, MAC header and fixed header size
-# Output:   None
+# Get P2P CoAP bytes
+# Input:    Nodes, request payload, response payload, MAC header, total header, number of CoAP messages
+# Output:   TX and RX bytes for every node in nodes
 ###
-def get_p2p_coap_bytes(sender, receiver, rq_payload, rp_payload, mac_hdr, tot_hdr):
-    request_path, response_path = get_multihop_path(sender, receiver)
-    if(len(request_path) != 0):
-        get_multihop_coap_bytes(request_path, rq_payload, mac_hdr, tot_hdr)
-    if(len(response_path) != 0):
-        get_multihop_coap_bytes(response_path, rp_payload, mac_hdr, tot_hdr)
+def get_p2p_coap_bytes(nodes, rq_payload, rp_payload, mac_hdr, tot_hdr, p_time):
+    ti = p_time*1000.0
+    coap = COAP_PERIOD*1000.0
+    for n in nodes:
+        if(n.id != SERVER):
+            # CoAP messages were spread out to prevent network flooding, remove if not applicable
+            if(n.id < 9):
+                firstcoap = (((n.id-1)*(COAP_PERIOD/9.0))%COAP_PERIOD)*1000.0+384
+            else:
+                firstcoap = (((n.id-2)*(COAP_PERIOD/9.0))%COAP_PERIOD)*1000.0+384
+            to = n.predtime - (firstcoap + np.floor((n.predtime-firstcoap)/coap)*coap)
+            n_coap = np.floor((ti+to)/coap)
+            request_path, response_path = get_multihop_path(n, ns.search_node(SERVER))
+            if(len(request_path) != 0):
+                get_multihop_coap_bytes(request_path, rq_payload, mac_hdr, tot_hdr, n_coap)
+            if(len(response_path) != 0):
+                get_multihop_coap_bytes(response_path, rp_payload, mac_hdr, tot_hdr, n_coap)
 
 ###
 # Get number DAOs within a chosen time period
 # Input:    Nodes, time period, DAO period
 # Output:   Number of DAOs
 ###
-def get_daos(nodes, est_time, dao_period):
+def get_daos(nodes, p_time, opt_tel):
+    ti = p_time*1000.0
+    dao = DAO_PERIOD*1000.0
     daos = []
     for n in nodes:
-        if((n.lastdao != None) and (n.updtime != None)):
-            final = n.updtime/1000 + est_time
-            dao = int(np.floor((final-n.lastdao/1000)/dao_period))
+        if(opt_tel and (n.lastdao != None) and (n.updtime != None)):
+            to = n.predtime - (n.lastdao + np.floor((n.predtime-n.lastdao)/dao)*dao)
+            n_dao = np.floor((ti+to)/dao)
         else:
-            dao = int(np.floor(est_time/dao_period))
-        daos.append(dao)
-    return daos
+            n_dao = ti/dao
+        if(n.id != ROOT):
+            get_multihop_dao_bytes(n,n_dao,L_DAO,L_DAO_ACK)
 
-# TODO: replace and merge this function with get_multihop_coap_bytes
-def get_multihop_dao_bytes(node, L_RQ, L_RP):
+def get_multihop_dao_bytes(node,n_dao,L_RQ, L_RP):
     SRH_F, SRH_I, SRH_L, RQ_F, RQ_I, RQ_L = get_source_routing_header(node,0)
     L_RQ_MF = L_RQ + RQ_F
     L_RQ_MI = L_RQ + RQ_I
@@ -345,94 +448,113 @@ def get_multihop_dao_bytes(node, L_RQ, L_RP):
     L_RP_MF = L_RP + SRH_F
     L_RP_MI = L_RP + SRH_I
     L_RP_ML = L_RP + SRH_L
+    etx = 1
+    root = ns.search_node(ROOT)
     if(node.pn.id == ROOT):
-        node.daotx += L_RQ                                        
-        nodes.nodes[search_node(nodes.nodes,ROOT)].eacktx += L_EACK    
-        nodes.nodes[search_node(nodes.nodes,ROOT)].dao_acktx += L_RP     
-        node.eacktx += L_EACK                                       
+        etx = max(node.etx,1)
+        node.daotx += L_RQ*n_dao*etx
+        root.eacktx += L_EACK*n_dao          
+        root.daorx += L_RQ*n_dao 
+        node.eackrx += L_EACK*n_dao
+        root.dao_acktx += L_RP*n_dao*etx
+        node.eacktx += L_EACK*n_dao
+        node.dao_ackrx += L_RP*n_dao
+        root.eackrx += L_EACK*n_dao 
     else:
-        node.daotx += L_RQ_MF                                     
-        node.eacktx += L_EACK                                      
-        next_hop = node.pn           
-        next_hop.dao_acktx += L_RP_ML                                
-        next_hop.eacktx += L_EACK                                  
+        etx = max(node.etx,1)
+        node.daotx += L_RQ_MF*n_dao*etx                                     
+        node.eacktx += L_EACK*n_dao                                      
+        next_hop = node.pn
+        next_hop.daorx += L_RQ_MF*n_dao                                     
+        next_hop.eackrx += L_EACK*n_dao            
+        next_hop.dao_acktx += L_RP_ML*n_dao*etx                                
+        next_hop.eacktx += L_EACK*n_dao
+        node.dao_ackrx += L_RP_ML*n_dao                                
+        node.eackrx += L_EACK*n_dao                                  
         while(next_hop.pn.id != ROOT):
-            next_hop.daotx += L_RQ_MI                           
-            next_hop.eacktx += L_EACK                           
-            next_hop = next_hop.pn
-            next_hop.dao_acktx += L_RP_MI                           
-            next_hop.eacktx += L_EACK                              
-        next_hop.daotx += L_RQ_ML                                  
-        next_hop.eacktx += L_EACK                                 
-        nodes.nodes[search_node(nodes.nodes,ROOT)].dao_acktx += L_RP_MF
-        nodes.nodes[search_node(nodes.nodes,ROOT)].eacktx += L_EACK
+            etx = max(next_hop.etx,1)
+            next_hop.daotx += L_RQ_MI*n_dao*etx                           
+            next_hop.eacktx += L_EACK*n_dao 
+            next_hop.dao_ackrx += L_RP_MI*n_dao                           
+            next_hop.eackrx += L_EACK*n_dao                           
+            next_hop = next_hop.pn            
+            next_hop.daorx += L_RQ_MI*n_dao                           
+            next_hop.eackrx += L_EACK*n_dao
+            next_hop.dao_acktx += L_RP_MI*n_dao*etx                           
+            next_hop.eacktx += L_EACK*n_dao
+        etx = max(next_hop.etx,1)                              
+        next_hop.daotx += L_RQ_ML*n_dao*etx                                  
+        next_hop.eacktx += L_EACK*n_dao   
+        next_hop.dao_ackrx += L_RP_MF*n_dao
+        next_hop.eackrx += L_EACK*n_dao                                
+        root.dao_acktx += L_RP_MF*n_dao*etx
+        root.eacktx += L_EACK*n_dao
+        root.daorx += L_RQ_ML*n_dao                                  
+        root.eackrx += L_EACK*n_dao  
+
+def get_int_bytes(nodes, p_time):
+    ti = p_time*1000.0
+    int = INT_PERIOD*1000.0
+    for n in nodes:
+        if(n.id != ROOT):
+            if(n.updtime != None):
+                n_int = ti/int
+                l_int = 16 + n.n + 8
+                next_hop = n.pn
+                while(next_hop.id != ROOT):
+                    n.coaptx += n_int*l_int
+                    next_hop.coaprx += n_int*l_int
+                    n = next_hop
+                    next_hop = next_hop.pn
+                n.coaptx += n_int*l_int
+                next_hop.coaprx += n_int*l_int
             
 ############
 ### MAIN ###
 ############
-coap_periods = int(np.floor(TIME/COAP_PERIOD))
-eb_periods = int(np.floor(TIME/EB_PERIOD))
-dio_periods = int(np.floor(TIME/IMAX))
-dao_periods = int(np.floor(TIME/DAO_PERIOD))
 
-with open('predictions.csv', 'w', newline='') as csvfile:
-    predwriter = csv.writer(csvfile, delimiter=' ', quotechar='|', quoting=csv.QUOTE_MINIMAL)
-    predwriter.writerow(['Time', 'Node_ID', 'EB_TX', 'EACK_TX', 'DIO_TX', 'DAO_TX', 'DAO_ACK_TX', 'CoAP_TX'])
+if(len(sys.argv) < 3):
+    print("Missing argument!")
+else:
+    realtime = int(sys.argv[1])
+    prediction_interval = float(sys.argv[2])
+    ns.init()
+    ns.mop = 0
+    if(realtime == 0):
+        if(len(sys.argv) < 4):
+            print("Missing argument!")
+            ns.cont = 0
+        else:
+            simulation_dir = sys.argv[3]
+            ns.logfile = open(simulation_dir + "/topology.log","r")
+            ns.logsize = len(ns.logfile.readlines())
+            ns.logfile.seek(0)
+            print("Parsing root logfile...")
+    with open('predictions.csv', 'w', newline='') as csvfile:
+        predwriter = csv.writer(csvfile, delimiter=' ', quotechar='|', quoting=csv.QUOTE_MINIMAL)
+        predwriter.writerow(['Time','Node_ID','EB_TX','EACK_TX','EACK_RX','EB_RX','DIO_TX','DIO_RX','DAO_TX','DAO_RX','DAO_ACK_TX','DAO_ACK_RX','CoAP_TX','CoAP_RX','Total_TX','Total_RX','Total'])
 
-    nodes.init()
-    while(1):
-        # Start reading logfile
-        nodes.read = 1
-        # Reset estimated bytes
-        for n in nodes.nodes:
-            n.reset_bytecount()
-        # Get topology from logfile
-        parse_log.update_topology()
-        # Estimate EB bytes
-        for i in range(0, eb_periods):
-            get_eb_bytes(nodes.nodes)
-        # Estimate DIO bytes
-        for i in range(0, dio_periods):
-            get_dio_bytes(nodes.nodes)
-        # Estimate CoAP bytes
-        for i in range(0,coap_periods):
-            for n in nodes.nodes: 
-                if(n.id != SERVER):
-                    get_p2p_coap_bytes(n, nodes.nodes[search_node(nodes.nodes,SERVER)], L_COAP_RQ, L_COAP_RP, L_MAC_HDR, L_TOT_HDR) 
-        # Estimate DAO bytes         
-        daos = get_daos(nodes.nodes, TIME, DAO_PERIOD)
-        for i in range(0,len(nodes.nodes)):
-            if(nodes.nodes[i].id != ROOT):
-                for j in range(0,daos[i]):
-                    get_multihop_dao_bytes(nodes.nodes[i],L_DAO,L_DAO_ACK)  
-        for n in nodes.nodes:
-            n.print_n()
-            predwriter.writerow([n.updtime ,n.id, n.ebtx, n.eacktx, n.diotx, n.daotx, n.dao_acktx, n.coaptx])
-        predwriter.writerow([0,0,0,0,0,0,0,0])
-
-
-### TEST SCRIPT ###
-# nodes.init()
-# nodes.nodes.append(parse_log.node(1))
-# nodes.nodes.append(parse_log.node(2))
-# nodes.nodes.append(parse_log.node(3))
-# nodes.nodes.append(parse_log.node(4))
-# nodes.nodes.append(parse_log.node(5))
-# nodes.nodes.append(parse_log.node(6))
-# nodes.nodes.append(parse_log.node(7))
-# nodes.nodes.append(parse_log.node(8))
-# nodes.nodes.append(parse_log.node(9))
-# nodes.nodes.append(parse_log.node(10))
-# nodes.nodes[search_node(nodes.nodes,2)].update_n([],nodes.nodes[search_node(nodes.nodes,1)])
-# nodes.nodes[search_node(nodes.nodes,3)].update_n([],nodes.nodes[search_node(nodes.nodes,9)])
-# nodes.nodes[search_node(nodes.nodes,4)].update_n([],nodes.nodes[search_node(nodes.nodes,3)])
-# nodes.nodes[search_node(nodes.nodes,5)].update_n([],nodes.nodes[search_node(nodes.nodes,1)])
-# nodes.nodes[search_node(nodes.nodes,6)].update_n([],nodes.nodes[search_node(nodes.nodes,3)])
-# nodes.nodes[search_node(nodes.nodes,7)].update_n([],nodes.nodes[search_node(nodes.nodes,2)])
-# nodes.nodes[search_node(nodes.nodes,8)].update_n([],nodes.nodes[search_node(nodes.nodes,5)])
-# nodes.nodes[search_node(nodes.nodes,9)].update_n([],nodes.nodes[search_node(nodes.nodes,1)])
-# nodes.nodes[search_node(nodes.nodes,10)].update_n([],nodes.nodes[search_node(nodes.nodes,1)])
-
-# get_p2p_coap_bytes(nodes.nodes[search_node(nodes.nodes,2)], nodes.nodes[search_node(nodes.nodes,8)], L_COAP_RQ, L_COAP_RP, L_MAC_HDR, L_TOT_HDR)
-# for n in nodes.nodes:
-#     n.print_n()
+        while(ns.cont):
+            # Start reading logfile
+            ns.read = 1
+            # Reset estimated bytes
+            for n in ns.nodes:
+                n.reset_bytecount()
+            # Get topology from logfile
+            parse_log.update_topology(realtime)
+            # Estimate EB bytes
+            get_eb_bytes(ns.nodes,prediction_interval, True)
+            # Estimate DIO bytes
+            get_dio_bytes(ns.nodes,prediction_interval, False)
+            # Estimate CoAP bytes
+            get_p2p_coap_bytes(ns.nodes, L_COAP_RQ, L_COAP_RP, L_MAC_HDR, L_TOT_HDR, prediction_interval)
+            # Estimate DAO bytes         
+            get_daos(ns.nodes,prediction_interval, True)
+            # Estimate INT bytes
+            get_int_bytes(ns.nodes,prediction_interval)
+            if(len(ns.nodes) == ns.N):
+                for n in ns.nodes:
+                    if(realtime):
+                        n.print_n()
+                    predwriter.writerow([int(n.predtime),n.id,float(n.ebtx),float(n.ebrx),int(n.eacktx),int(n.eackrx),int(n.diotx),int(n.diorx),int(n.daotx),int(n.daorx),int(n.dao_acktx),int(n.dao_ackrx),int(n.coaptx),int(n.coaprx),int(n.ebtx+n.eacktx+n.diotx+n.daotx+n.dao_acktx+n.coaptx),int(n.ebrx+n.eackrx+n.diorx+n.daorx+n.dao_ackrx+n.coaprx),int(n.ebtx+n.eacktx+n.diotx+n.daotx+n.dao_acktx+n.coaptx+n.ebrx+n.eackrx+n.diorx+n.daorx+n.dao_ackrx+n.coaprx)])
+                predwriter.writerow([0,'Node_ID','EB_TX','EB_RX','EACK_TX','EACK_RX','DIO_TX','DIO_RX','DAO_TX','DAO_RX','DAO_ACK_TX','DAO_ACK_RX','CoAP_TX','CoAP_RX','Total_TX','Total_RX','Total'])  
