@@ -1,7 +1,12 @@
 import csv
 import numpy as np
 import matplotlib.pyplot as plt
-import sys
+
+try:    
+    import config
+except:
+    print("Did you fill the fields in the config.py.example file and rename it to config.py?")
+    exit()
 
 class node:
     def __init__(self, id):
@@ -226,91 +231,86 @@ def print_boxplot(nodes_e, type, t_min, t_max):
             for i in range(t_min,t_max):
                 boxwriter.writerow([(1-t.txtotal[i])*100,(1-t.rxtotal[i])*100,(1-t.total[i])*100])
 
-if(len(sys.argv) < 3):
-    print("Missing parameter!")
-else:
-    destination = sys.argv[1]
-    m_type = sys.argv[2]
 
-    nodes_pred = get_nodes(predictions)
-    nodes_act = get_nodes(predictions)
-    nodes_err = get_nodes(predictions)
+nodes_pred = get_nodes(predictions)
+nodes_act = get_nodes(predictions)
+nodes_err = get_nodes(predictions)
 
-    for p in predictions:
-        if((p[0] != '0') and (p[0] != 'Time')):
-            n = search_node(nodes_pred,int(p[1]))
-            n.times.append(int(p[0])/1000)
-            n.txeb.append(float(p[2]))
-            n.rxeb.append(float(p[3]))
-            n.txeack.append(int(p[4]))
-            n.rxeack.append(int(p[5]))
-            n.txdio.append(int(p[6]))
-            n.rxdio.append(int(p[7]))
-            n.txdao.append(int(p[8]))
-            n.rxdao.append(int(p[9]))
-            n.txdao_ack.append(int(p[10]))
-            n.rxdao_ack.append(int(p[11]))
-            n.txcoap.append(int(p[12]))
-            n.rxcoap.append(int(p[13]))
-            n.txtotal.append(int(p[14]))
-            n.rxtotal.append(int(p[15]))
-            n.total.append(int(p[16]))
+for p in predictions:
+    if((p[0] != '0') and (p[0] != 'Time')):
+        n = search_node(nodes_pred,int(p[1]))
+        n.times.append(int(p[0])/1000)
+        n.txeb.append(float(p[2]))
+        n.rxeb.append(float(p[3]))
+        n.txeack.append(int(p[4]))
+        n.rxeack.append(int(p[5]))
+        n.txdio.append(int(p[6]))
+        n.rxdio.append(int(p[7]))
+        n.txdao.append(int(p[8]))
+        n.rxdao.append(int(p[9]))
+        n.txdao_ack.append(int(p[10]))
+        n.rxdao_ack.append(int(p[11]))
+        n.txcoap.append(int(p[12]))
+        n.rxcoap.append(int(p[13]))
+        n.txtotal.append(int(p[14]))
+        n.rxtotal.append(int(p[15]))
+        n.total.append(int(p[16]))
 
-    for a in actual:
-        if((a[0] != '0') and (a[0] != 'Time')):
-            n = search_node(nodes_act,int(a[1]))
-            n.times.append(int(a[0])/1000)
-            n.txeb.append(int(a[2]))
-            n.rxeb.append(int(a[3]))
-            n.txeack.append(int(a[4]))
-            n.rxeack.append(int(a[5]))
-            n.txdio.append(int(a[6]))
-            n.rxdio.append(int(a[7]))
-            n.txdao.append(int(a[8]))
-            n.rxdao.append(int(a[9]))
-            n.txdao_ack.append(int(a[10]))
-            n.rxdao_ack.append(int(a[11]))
-            n.txcoap.append(int(a[12]))
-            n.rxcoap.append(int(a[13]))
-            n.txtotal.append(int(a[14]))
-            n.rxtotal.append(int(a[15]))
-            n.total.append(int(a[16]))
-    
-    total_pred_node = get_total_nodes(nodes_pred)
-    total_act_node = get_total_nodes(nodes_act)
-    nodes_act.append(total_act_node)
-    nodes_pred.append(total_pred_node)
-    nodes_err.append(node(0))
+for a in actual:
+    if((a[0] != '0') and (a[0] != 'Time')):
+        n = search_node(nodes_act,int(a[1]))
+        n.times.append(int(a[0])/1000)
+        n.txeb.append(int(a[2]))
+        n.rxeb.append(int(a[3]))
+        n.txeack.append(int(a[4]))
+        n.rxeack.append(int(a[5]))
+        n.txdio.append(int(a[6]))
+        n.rxdio.append(int(a[7]))
+        n.txdao.append(int(a[8]))
+        n.rxdao.append(int(a[9]))
+        n.txdao_ack.append(int(a[10]))
+        n.rxdao_ack.append(int(a[11]))
+        n.txcoap.append(int(a[12]))
+        n.rxcoap.append(int(a[13]))
+        n.txtotal.append(int(a[14]))
+        n.rxtotal.append(int(a[15]))
+        n.total.append(int(a[16]))
 
-    for n in nodes_err:
-        p = search_node(nodes_pred,n.id)
-        a = search_node(nodes_act,n.id)
-        n.times = p.times
-        for i in range(0,len(n.times)):
-            n.txeb.append(calculate_error(a.txeb[i],p.txeb[i]))
-            n.rxeb.append(calculate_error(a.rxeb[i],p.rxeb[i]))
-            n.txeack.append(calculate_error(a.txeack[i],p.txeack[i]))
-            n.rxeack.append(calculate_error(a.rxeack[i],p.rxeack[i]))
-            n.txdio.append(calculate_error(a.txdio[i],p.txdio[i]))
-            n.rxdio.append(calculate_error(a.rxdio[i],p.rxdio[i]))
-            n.txdao.append(calculate_error(a.txdao[i],p.txdao[i]))
-            n.rxdao.append(calculate_error(a.rxdao[i],p.rxdao[i]))
-            n.txdao_ack.append(calculate_error(a.txdao_ack[i],p.txdao_ack[i]))
-            n.rxdao_ack.append(calculate_error(a.rxdao_ack[i],p.rxdao_ack[i]))
-            n.txcoap.append(calculate_error(a.txcoap[i],p.txcoap[i]))
-            n.rxcoap.append(calculate_error(a.rxcoap[i],p.rxcoap[i]))
-            n.txtotal.append(calculate_error(a.txtotal[i],p.txtotal[i]))
-            n.rxtotal.append(calculate_error(a.rxtotal[i],p.rxtotal[i]))
-            n.total.append(calculate_error(a.total[i],p.total[i]))
+total_pred_node = get_total_nodes(nodes_pred)
+total_act_node = get_total_nodes(nodes_act)
+nodes_act.append(total_act_node)
+nodes_pred.append(total_pred_node)
+nodes_err.append(node(0))
 
-    begin = 4500
-    end = 2500
-    # begin = 6000    # topology tests
-    # end = 1500      # topology tests
+for n in nodes_err:
+    p = search_node(nodes_pred,n.id)
+    a = search_node(nodes_act,n.id)
+    n.times = p.times
+    for i in range(0,len(n.times)):
+        n.txeb.append(calculate_error(a.txeb[i],p.txeb[i]))
+        n.rxeb.append(calculate_error(a.rxeb[i],p.rxeb[i]))
+        n.txeack.append(calculate_error(a.txeack[i],p.txeack[i]))
+        n.rxeack.append(calculate_error(a.rxeack[i],p.rxeack[i]))
+        n.txdio.append(calculate_error(a.txdio[i],p.txdio[i]))
+        n.rxdio.append(calculate_error(a.rxdio[i],p.rxdio[i]))
+        n.txdao.append(calculate_error(a.txdao[i],p.txdao[i]))
+        n.rxdao.append(calculate_error(a.rxdao[i],p.rxdao[i]))
+        n.txdao_ack.append(calculate_error(a.txdao_ack[i],p.txdao_ack[i]))
+        n.rxdao_ack.append(calculate_error(a.rxdao_ack[i],p.rxdao_ack[i]))
+        n.txcoap.append(calculate_error(a.txcoap[i],p.txcoap[i]))
+        n.rxcoap.append(calculate_error(a.rxcoap[i],p.rxcoap[i]))
+        n.txtotal.append(calculate_error(a.txtotal[i],p.txtotal[i]))
+        n.rxtotal.append(calculate_error(a.rxtotal[i],p.rxtotal[i]))
+        n.total.append(calculate_error(a.total[i],p.total[i]))
 
-    for n in nodes_err:
-        plot_node(nodes_err,n.id,m_type,begin,len(nodes_err[0].times)-end,destination + "/Figures/")
-    # print(nodes_err[0].times[begin])
-    # print(nodes_err[0].times[len(nodes_err[0].times)-end])
-    print_analysis(nodes_err,m_type,begin,len(nodes_err[0].times)-end)
-    # print_boxplot(nodes_err,m_type,begin,len(nodes_err[0].times)-end)
+begin = 4500
+end = 2500
+# begin = 6000    # topology tests
+# end = 1500      # topology tests
+
+for n in nodes_err:
+    plot_node(nodes_err,n.id,config.PROTOCOL,begin,len(nodes_err[0].times)-end,config.SIM_DIR + "/Figures/")
+# print(nodes_err[0].times[begin])
+# print(nodes_err[0].times[len(nodes_err[0].times)-end])
+print_analysis(nodes_err,config.PROTOCOL,begin,len(nodes_err[0].times)-end)
+# print_boxplot(nodes_err,config.PROTOCOL,begin,len(nodes_err[0].times)-end)

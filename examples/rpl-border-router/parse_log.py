@@ -3,6 +3,12 @@ import os
 import re
 import nodes
 
+try:    
+    import config
+except:
+    print("Did you fill the fields in the config.py.example file and rename it to config.py?")
+    exit()
+
 ROOT = 1                        # Node ID of root
 INT_INTERVAL = 0                # INT interval in ms (in case of non-storing mode, only for artificially increasing the interval)
 
@@ -37,7 +43,7 @@ def read_logline(line):
         t = float(matchpred.group("time"))
         for n in nodes.nodes:
             n.predtime = t
-        nodes.read = 0
+        nodes.read = False
     # INT update
     if(nodes.mop == 1):
         matchint = re.match(REGEXP_INTMULTI, chomped_line)
@@ -62,7 +68,7 @@ def read_logline(line):
         if(node == -1):
             node = nodes.node(n)
             nodes.nodes.append(node)
-        if((node.updtime == None) or ((((node_asn_ls4b+node_asn_ms1b*pow(2,32))*10)+384) > (node.updtime + INT_INTERVAL))):
+        if((node.updtime == None) or ((((node_asn_ls4b+node_asn_ms1b*pow(2,32))*10)+config.COOJA_OFFSET) > (node.updtime + INT_INTERVAL))):
             nodes.intstream = True
             if(nodes.mop == 1):
                 p = int(matchint.group("parent"))
@@ -77,19 +83,19 @@ def read_logline(line):
                 if(root != -1):
                     root.rt = []
 
-            node.updtime = ((node_asn_ls4b+node_asn_ms1b*pow(2,32))*10)+384
+            node.updtime = ((node_asn_ls4b+node_asn_ms1b*pow(2,32))*10)+config.COOJA_OFFSET
             node.etx = etx/128
-            node.intbytes[0].append(((node_asn_ls4b+node_asn_ms1b*pow(2,32))*10)+384)
+            node.intbytes[0].append(((node_asn_ls4b+node_asn_ms1b*pow(2,32))*10)+config.COOJA_OFFSET)
             node.intbytes[1].append(length)
-            node.lastdao = ((dao_asn_ls4b+dao_asn_ms1b*pow(2,32))*10)+384
-            node.lastebgen = ((ebgen_asn_ls4b+ebgen_asn_ms1b*pow(2,32))*10)+384
-            node.lastebtx = ((ebtx_asn_ls4b+ebtx_asn_ms1b*pow(2,32))*10)+384
+            node.lastdao = ((dao_asn_ls4b+dao_asn_ms1b*pow(2,32))*10)+config.COOJA_OFFSET
+            node.lastebgen = ((ebgen_asn_ls4b+ebgen_asn_ms1b*pow(2,32))*10)+config.COOJA_OFFSET
+            node.lastebtx = ((ebtx_asn_ls4b+ebtx_asn_ms1b*pow(2,32))*10)+config.COOJA_OFFSET
             tsn = nodes.search_node(ts)
             if(tsn != -1):
                 node.ts = tsn
             if(root != -1):
-                root.updtime = ((node_asn_ls4b+node_asn_ms1b*pow(2,32))*10)+384
-                root.intbytes[0].append(((node_asn_ls4b+node_asn_ms1b*pow(2,32))*10)+384)
+                root.updtime = ((node_asn_ls4b+node_asn_ms1b*pow(2,32))*10)+config.COOJA_OFFSET
+                root.intbytes[0].append(((node_asn_ls4b+node_asn_ms1b*pow(2,32))*10)+config.COOJA_OFFSET)
                 root.intbytes[1].append(length)
         else:
             nodes.intstream = False
@@ -144,9 +150,9 @@ def read_logline(line):
         ebtx_asn_ls4b = (int)(matchrint.group("eb_tx_asn_ls4b"))
         node = nodes.search_node(ROOT)
         if(node != -1):
-            node.lastdio = ((dio_asn_ls4b+dio_asn_ms1b*pow(2,32))*10)+384
-            node.lastebgen = ((ebgen_asn_ls4b+ebgen_asn_ms1b*pow(2,32))*10)+384
-            node.lastebtx = ((ebtx_asn_ls4b+ebtx_asn_ms1b*pow(2,32))*10)+384
+            node.lastdio = ((dio_asn_ls4b+dio_asn_ms1b*pow(2,32))*10)+config.COOJA_OFFSET
+            node.lastebgen = ((ebgen_asn_ls4b+ebgen_asn_ms1b*pow(2,32))*10)+config.COOJA_OFFSET
+            node.lastebtx = ((ebtx_asn_ls4b+ebtx_asn_ms1b*pow(2,32))*10)+config.COOJA_OFFSET
 
 def update_topology(realtime):
     if(realtime):
@@ -161,5 +167,5 @@ def update_topology(realtime):
             nodes.count = 0
             read_logline(line)
             if(nodes.logcount == nodes.logsize):
-                nodes.cont = 0
+                nodes.cont = False
             nodes.logcount += 1

@@ -1,29 +1,23 @@
-from tracemalloc import stop
-from matplotlib import lines
-
 import numpy as np
 
-
-def init():
+def init(MOP):
     global nodes                # Array of nodes
-    global N                    # Number of nodes we are expecting
-    global read                 # Keep reading?
+    global read                 # Interrupt reading logfile and perform prediction
     global count                # How many nodes did we encounter?
     global mop                  # RPL MOP (1 = storing mode, 0 = non-storing mode)
-    global logfile
-    global logsize
-    global logcount
-    global cont
-    global intstream
+    global logfile              # Logfile name
+    global logsize              # Logfile size
+    global logcount             # Current line in logfile
+    global cont                 # Continue reading logfile
+    global intstream            # Required to change INT update interval
 
     nodes = []
-    N = 10
     count = 0
-    read = 1
+    read = True
     logcount = 0
-    cont = 1
+    cont = True
     intstream = False
-    mop = 1
+    mop = MOP
 
 class node:
     def __init__(self, id):

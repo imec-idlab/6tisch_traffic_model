@@ -1,8 +1,13 @@
-import datetime
 import numpy as np
 import csv
 import re
 import sys
+
+try:    
+    import config
+except:
+    print("Did you fill the fields in the config.py.example file and rename it to config.py?")
+    exit()
 
 class node:
     def __init__(self, id):
@@ -204,13 +209,11 @@ def get_prediction_nodes(preds):
                 return nodes
     return nodes
 
-if(len(sys.argv) < 4):
+if(len(sys.argv) < 2):
     print("Missing argument!")
 else:
     print("Parsing cooja logfile...")
     retransmissions = int(sys.argv[1])
-    prediction_interval = float(sys.argv[2])
-    simlation_dir = sys.argv[3]
     predictions = []
 
     with open('predictions.csv', newline='') as csvfile:
@@ -218,7 +221,7 @@ else:
         for row in predreader:
             predictions.append(row)
 
-    start = nodes = parse_cooja(simlation_dir + "/cooja_log.csv", get_prediction_nodes(predictions),retransmissions)
+    start = nodes = parse_cooja(config.SIM_DIR + "/cooja_log.csv", get_prediction_nodes(predictions),retransmissions)
     times = get_prediction_times(predictions)
 
     with open('actual.csv', 'w', newline='') as csvfile:
@@ -226,7 +229,7 @@ else:
         actwriter.writerow(['Time','Node_ID','EB_TX','EB_RX','EACK_TX','EACK_RX','DIO_TX','DIO_RX','DAO_TX','DAO_RX','DAO_ACK_TX','DAO_ACK_RX','CoAP_TX','CoAP_RX','Total_TX','Total_RX','Total'])
         for t in times:
             start = t
-            end = start + prediction_interval*1000
+            end = start + config.P_INTERVAL*1000
             clear_nodes(nodes)
             for n in nodes:
                 get_total_bytes(n,start,end)
