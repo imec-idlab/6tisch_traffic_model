@@ -31,6 +31,7 @@ doi={10.1109/TNSM.2019.2949509}
 ```
 ### IEEE ###
 > [1] D. V. Leemput, J. Hoebeke, E. De Poorter, Analytical traffic model of 6tisch using real-time in-band telemetry,” Internet of Things, vol. 23, p. 100847, 2023, doi: 10.1016/j.iot.2023.100847.
+
 > [2] A. Karaagac, E. De Poorter and J. Hoebeke, "In-Band Network Telemetry in Industrial Wireless Sensor Networks," in IEEE Transactions on Network and Service Management, vol. 17, no. 1, pp. 517-531, March 2020, doi: 10.1109/TNSM.2019.2949509.
 
 ## Traffic predictor tutorial for cooja
