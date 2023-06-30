@@ -1,5 +1,6 @@
 import csv
 import numpy as np
+import sys
 import matplotlib.pyplot as plt
 
 try:    
@@ -107,7 +108,6 @@ def calculate_error(actual, prediction):
         return 0
     else:
         return 1
-    # return abs(prediction-actual)
 
 def plot_node(nodes_e, n, type, t_min, t_max, dest):
     node = search_node(nodes_e,n)
@@ -137,11 +137,9 @@ def plot_node(nodes_e, n, type, t_min, t_max, dest):
     else:
         print("Unsupported frame type!\n")
         return
-    #plt.yscale("log")
     plt.legend()
     plt.xlabel("Time [s]")
     plt.ylabel("Error")
-    #plt.show()
     plt.savefig(dest)
 
 def print_analysis(nodes_e, type, t_min, t_max):
@@ -226,11 +224,13 @@ def print_analysis(nodes_e, type, t_min, t_max):
 def print_boxplot(nodes_e, type, t_min, t_max):
     t = search_node(nodes_e,0)
     if(type == "Total"):
-        with open('ns_box_stable_prr80_15min_def', 'w', newline='') as csvfile:
+        with open('box_ray_tracing_15min', 'w', newline='') as csvfile:
             boxwriter = csv.writer(csvfile, delimiter=' ', quotechar='|', quoting=csv.QUOTE_MINIMAL)
             for i in range(t_min,t_max):
                 boxwriter.writerow([(1-t.txtotal[i])*100,(1-t.rxtotal[i])*100,(1-t.total[i])*100])
 
+print_anal = int(sys.argv[1])
+print_box = int(sys.argv[2])
 
 nodes_pred = get_nodes(predictions)
 nodes_act = get_nodes(predictions)
@@ -303,14 +303,9 @@ for n in nodes_err:
         n.rxtotal.append(calculate_error(a.rxtotal[i],p.rxtotal[i]))
         n.total.append(calculate_error(a.total[i],p.total[i]))
 
-begin = 4500
-end = 2500
-# begin = 6000    # topology tests
-# end = 1500      # topology tests
-
 for n in nodes_err:
-    plot_node(nodes_err,n.id,config.PROTOCOL,begin,len(nodes_err[0].times)-end,config.SIM_DIR + "/Figures/")
-# print(nodes_err[0].times[begin])
-# print(nodes_err[0].times[len(nodes_err[0].times)-end])
-print_analysis(nodes_err,config.PROTOCOL,begin,len(nodes_err[0].times)-end)
-# print_boxplot(nodes_err,config.PROTOCOL,begin,len(nodes_err[0].times)-end)
+    plot_node(nodes_err,n.id,config.PROTOCOL,config.START_OFFSET,len(nodes_err[0].times)-config.END_OFFSET,config.SIM_DIR + "/Figures/")
+if(print_anal):
+    print_analysis(nodes_err,config.PROTOCOL,config.START_OFFSET,len(nodes_err[0].times)-config.END_OFFSET)
+if(print_box)
+    print_boxplot(nodes_err,config.PROTOCOL,config.START_OFFSET,len(nodes_err[0].times)-config.END_OFFSET)

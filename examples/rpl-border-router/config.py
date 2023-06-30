@@ -34,3 +34,7 @@ SIM_DIR         = "Simulations/Test"    # Simulation directory for non-real-time
 EB_INT          = True                  # Enable optional EB telemetry
 DIO_INT         = False                 # Enable optional DIO telemetry
 DAO_INT         = True                  # Enable optional DAO telemetry
+
+# ANALYSIS
+START_OFFSET    = 4500                  # Optional offset at start of the simulation [predictions]
+END_OFFSET      = 2500                  # Optional offset at end of the simulation [predictions]

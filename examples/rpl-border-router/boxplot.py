@@ -69,6 +69,23 @@ ns_90_netx = read_boxfile('Boxplots/ns_box_stable_prr90_15min_netx.csv',2)
 ns_80_def = read_boxfile('Boxplots/ns_box_stable_prr80_15min_opt.csv',2)
 ns_80_netx = read_boxfile('Boxplots/ns_box_stable_prr80_15min_netx.csv',2)
 
+#Ray tracing boxplot
+s_ray = read_boxfile('Boxplots/box_ray_tracing_15min.csv',2)
+fig, ax1 = plt.subplots()
+array = [s_ray]
+labels = ["Ray-tracing"]
+bplot = ax1.boxplot(array, labels=labels, patch_artist=True)
+me1 = np.median(array, axis=1)
+for i, line in enumerate(bplot['medians']):
+    x, y = line.get_xydata()[1]
+    text1 = 'η={:.2f} \n'.format(me1[i])
+    ax1.annotate(text1, xy=(i+1, 100), ha='center', va='bottom')
+colors = ['#4D9900']
+for patch, color in zip(bplot['boxes'], colors):
+    patch.set_facecolor(color)
+ax1.set_ylabel('Accuracy [%]')
+plt.show()
+
 # Storing dynamic boxplot
 fig, ax1 = plt.subplots()
 array = [s_dyn_60m, s_dyn_30m, s_dyn_15m, s_dyn_adapt]
